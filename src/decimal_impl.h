@@ -16,4 +16,5 @@ extern "C" {
 #undef dgettext
 #undef ngettext
 #undef dngettext
+
 // clang-format on
