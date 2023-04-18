@@ -47,7 +47,7 @@ Datum decimal_out(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
     
     // FIXME: Try-catch
-    char *result = _decimal_out(decimal);
+    const char *result = _decimal_out(decimal);
     PG_RETURN_CSTRING(result);
 }
 
