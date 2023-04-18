@@ -1,17 +1,17 @@
+\echo Use "CREATE EXTENSION pgfixeypointy" to load this file. \quit
+
 CREATE TYPE fxypty;
 
-CREATE FUNCTION fxypty_in(cstring, oid, int4)
-RETURNS fxypty
-AS 'decimal'
+CREATE FUNCTION fxypty_in(cstring)
+RETURNS fxypty AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
 
-CREATE FUNCTION fxypty_out(fixeddecimal)
-RETURNS cstring
-AS 'decimal'
+CREATE FUNCTION fxypty_out(fxypty)
+RETURNS cstring AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE TYPE fxypty (
-    INTERNALLENGTH = 128,
+    INTERNALLENGTH = 256,
     INPUT          = fxypty_in,
     OUTPUT         = fxypty_out
 );

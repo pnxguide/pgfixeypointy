@@ -1,5 +1,5 @@
-# pg_rrule extension
+# pglibfixeypointy extension
 comment = 'PostgreSQL Extension for libfixeypointy'
 default_version = '0.0.1'
 relocatable = true
-module_pathname = '$libdir/pglibfixeypointy'
+module_pathname = '$libdir/pgfixeypointy'

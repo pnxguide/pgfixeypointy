@@ -3,51 +3,47 @@
 #include "../../src/include/fmgr.h"
 // clang-format on
 
-extern void *_decimal_in(char *input, uint32_t scale);
-extern const char *_decimal_out(void *in);
+void *_fxypty_in(char *input);
+const char *_fxypty_out(void *in);
 
 // extern void *decimal_add_impl(void *a, void *b);
 // extern void *decimal_sub_impl(void *a, void *b);
 // extern void *decimal_mul_impl(void *a, void *b);
 // extern void *decimal_div_impl(void *a, void *b);
-
 // extern int decimal_cmp_impl(void *a, void *b);
 
+#ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
+#endif
+
+PG_FUNCTION_INFO_V1(fxypty_in);
+PG_FUNCTION_INFO_V1(fxypty_out);
 
 /*****************************************************************************
  * Input/Output functions
  *****************************************************************************/
 
-PG_FUNCTION_INFO_V1(decimal_in);
-
-Datum decimal_in(PG_FUNCTION_ARGS) {
+Datum fxypty_in(PG_FUNCTION_ARGS) {
     char *str = PG_GETARG_CSTRING(0);
 
     char input_buffer[64];
-    uint32_t scale;
     void *result;
 
-    if (sscanf(str, "( %s , %d )", input_buffer, &scale) != 2)
+    if (sscanf(str, "%s", input_buffer) != 1)
         ereport(ERROR, (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
                         errmsg("invalid input syntax for type %s: \"%s\"",
-                               "decimal", str)));
+                               "fxypty", str)));
 
     // FIXME: Try-catch
-    // if scale is not input can set default value
-    // uint32_t scale = Decimal::DEFAULT_SCALE;
-
-    result = _decimal_in(input_buffer, scale);
+    result = _fxypty_in(input_buffer);
     PG_RETURN_POINTER(result);
 }
 
-PG_FUNCTION_INFO_V1(decimal_out);
-
-Datum decimal_out(PG_FUNCTION_ARGS) {
+Datum fxypty_out(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
     
     // FIXME: Try-catch
-    const char *result = _decimal_out(decimal);
+    const char *result = _fxypty_out(decimal);
     PG_RETURN_CSTRING(result);
 }
 

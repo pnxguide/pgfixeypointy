@@ -1,35 +1,37 @@
-#include "decimal_impl.h"
+extern "C" {
+#include "postgres.h"
+}
+
+#undef vsnprintf
+#undef snprintf
+#undef vsprintf
+#undef sprintf
+#undef vfprintf
+#undef fprintf
+#undef vprintf
+#undef printf
+#undef gettext
+#undef dgettext
+#undef ngettext
+#undef dngettext
 
 #include "../third_party/libfixeypointy/src/decimal.h"
 
-// using namespace libfixeypointy;
+struct FxyPty_Decimal {
+    libfixeypointy::Decimal *decimal;
+    uint32_t scale;
+};
 
-// struct TypeDecimal {
-//     Decimal *decimal = nullptr;
-//     uint32_t scale;
-
-//     TypeDecimal(Decimal *data, uint32_t scale) {
-//         this->decimal = data;
-//         this->scale = scale;
-//     }
-
-//     TypeDecimal(char *input, uint32_t scale) {
-//         this->decimal = new Decimal(std::string(input), scale);
-//         this->scale = scale;
-//     }
-
-//     ~TypeDecimal() {
-//         if (decimal != nullptr) delete decimal;
-//     }
-// }
-
-extern "C" void *_decimal_in(char *input, uint32_t scale) {
-    return new libfixeypointy::Decimal(input, scale);
+extern "C" void *_fxypty_in(char *input) {
+    FxyPty_Decimal *decimal = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    decimal->decimal = new libfixeypointy::Decimal(input, libfixeypointy::Decimal::DEFAULT_SCALE);
+    decimal->scale = libfixeypointy::Decimal::DEFAULT_SCALE;
+    return decimal;
 }
 
-extern "C" const char *_decimal_out(void *in) {
-    libfixeypointy::Decimal *in_decimal = (libfixeypointy::Decimal *)in;
-    std::string in_string = in_decimal->ToString(libfixeypointy::Decimal::DEFAULT_SCALE);
+extern "C" const char *_fxypty_out(void *in) {
+    FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
+    std::string in_string = decimal->decimal->ToString(decimal->scale);
     return in_string.c_str();
 }
 
