@@ -3,6 +3,7 @@
 // clang-format off
 extern "C" {
 #include "../../src/include/postgres.h"
+#include <cstring>
 }
 #undef vsnprintf
 #undef snprintf

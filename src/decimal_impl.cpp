@@ -65,6 +65,15 @@ extern "C" void *decimal_mul_impl(void *a, void *b) {
     return (void *) result;
 }
 
+extern "C" void *decimal_mul_const_impl(void *a, int64_t b) {
+    TypeDecimal *a_val = (TypeDecimal *)a;
+
+    TypeDecimal *result = new TypeDecimal(*(a_val->decimal), a_val->scale);
+    *(result->decimal).MultiplyByConstant(b);
+
+    return (void *) result;
+}
+
 extern "C" void *decimal_div_impl(void *a, void *b) {
     TypeDecimal *a_val = (TypeDecimal *)a;
     TypeDecimal *b_val = (TypeDecimal *)b;
@@ -72,6 +81,27 @@ extern "C" void *decimal_div_impl(void *a, void *b) {
     uint32_t new_scale = Decimal::MatchScales(a_val->decimal, b_val->decimal, a_val->scale, b_val->scale);
     TypeDecimal *result = new TypeDecimal(*(a_val->decimal), new_scale);
     *(result->decimal).Divide(*(b_val->decimal), new_scale);
+
+    return (void *) result;
+}
+
+extern "C" void *decimal_div_const_impl(void *a, int64_t b) {
+    TypeDecimal *a_val = (TypeDecimal *)a;
+
+    TypeDecimal *result = new TypeDecimal(*(a_val->decimal), a_val->scale);
+    *(result->decimal).DivideByConstant(b);
+
+    return (void *) result;
+}
+
+extern "C" void *const_div_decimal_impl(int64_t a, void *b) {
+    TypeDecimal *b_val = (TypeDecimal *)b;
+
+    char str[40];
+    std::itoa(a, str, 10);
+
+    TypeDecimal *result = new TypeDecimal(str, b_val->scale);
+    *(result->decimal).Divide(*(b_val->decimal), b_val->scale);
 
     return (void *) result;
 }

@@ -9,7 +9,10 @@ extern const char *decimal_out_impl(void *in);
 extern void *decimal_add_impl(void *a, void *b);
 extern void *decimal_sub_impl(void *a, void *b);
 extern void *decimal_mul_impl(void *a, void *b);
+extern void *decimal_mul_const_impl(void *a, int64_t b);
 extern void *decimal_div_impl(void *a, void *b);
+extern void *decimal_div_const_impl(void *a, int64_t b);
+extern void *const_div_decimal_impl(int64_t a, void *b);
 
 extern int decimal_cmp_impl(void *a, void *b);
 
@@ -90,6 +93,58 @@ Datum decimal_mul(PG_FUNCTION_ARGS) {
     PG_RETURN_POINTER(result);
 }
 
+PG_FUNCTION_INFO_V1(int4_decimal_mul);
+
+Datum int4_decimal_mul(PG_FUNCTION_ARGS) {
+    void *result;
+
+    int32_t a = PG_GETARG_INT32(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+
+    result = decimal_mul_const_impl(b, a);
+
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(int8_decimal_mul);
+
+Datum int8_decimal_mul(PG_FUNCTION_ARGS) {
+    void *result;
+
+    int64_t a = PG_GETARG_INT64(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+
+    result = decimal_mul_const_impl(b, a);
+
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(decimal_mul_int4);
+
+Datum decimal_mul_int4(PG_FUNCTION_ARGS) {
+    void *result;
+
+    void *a = (void *)PG_GETARG_POINTER(0);
+    int32_t *b = PG_GETARG_INT32(1);
+
+    result = decimal_mul_const_impl(a, b);
+
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(decimal_mul_int8);
+
+Datum decimal_mul_int8(PG_FUNCTION_ARGS) {
+    void *result;
+
+    void *a = (void *)PG_GETARG_POINTER(0);
+    int64_t *b = PG_GETARG_INT64(1);
+
+    result = decimal_mul_const_impl(a, b);
+
+    PG_RETURN_POINTER(result);
+}
+
 PG_FUNCTION_INFO_V1(decimal_div);
 
 Datum decimal_div(PG_FUNCTION_ARGS) {
@@ -99,6 +154,58 @@ Datum decimal_div(PG_FUNCTION_ARGS) {
     void *b = (void *)PG_GETARG_POINTER(1);
 
     result = decimal_div_impl(a, b);
+
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(int4_decimal_div);
+
+Datum int4_decimal_div(PG_FUNCTION_ARGS) {
+    void *result;
+
+    int32_t a = PG_GETARG_INT32(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+
+    result = const_div_decimal_impl(a, b);
+
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(int8_decimal_div);
+
+Datum int8_decimal_div(PG_FUNCTION_ARGS) {
+    void *result;
+
+    int64_t a = PG_GETARG_INT64(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+
+    result = const_div_decimal_impl(a, b);
+
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(decimal_div_int4);
+
+Datum decimal_div_int4(PG_FUNCTION_ARGS) {
+    void *result;
+
+    void *a = (void *)PG_GETARG_POINTER(0);
+    int32_t *b = PG_GETARG_INT32(1);
+
+    result = decimal_div_const_impl(a, b);
+
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(decimal_div_int8);
+
+Datum decimal_div_int8(PG_FUNCTION_ARGS) {
+    void *result;
+
+    void *a = (void *)PG_GETARG_POINTER(0);
+    int64_t *b = PG_GETARG_INT64(1);
+
+    result = decimal_div_const_impl(a, b);
 
     PG_RETURN_POINTER(result);
 }
