@@ -4,7 +4,7 @@
 // clang-format on
 
 void *_fxypty_in(char *input);
-const char *_fxypty_out(void *in);
+void _fxypty_out(char out[64], void *in);
 
 // extern void *decimal_add_impl(void *a, void *b);
 // extern void *decimal_sub_impl(void *a, void *b);
@@ -43,7 +43,11 @@ Datum fxypty_out(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
     
     // FIXME: Try-catch
-    const char *result = _fxypty_out(decimal);
+    char *result = (char *)palloc(sizeof(char) * 64);
+    _fxypty_out(result, decimal);
+
+    printf("fxypty_out %s\n", result);
+
     PG_RETURN_CSTRING(result);
 }
 

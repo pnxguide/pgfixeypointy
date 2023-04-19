@@ -11,7 +11,7 @@ RETURNS cstring AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE TYPE fxypty (
-    INTERNALLENGTH = 256,
+    INTERNALLENGTH = 32,
     INPUT          = fxypty_in,
     OUTPUT         = fxypty_out
 );
