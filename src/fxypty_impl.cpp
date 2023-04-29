@@ -19,19 +19,20 @@ extern "C" {
 
 /// @brief
 struct FxyPty_Decimal {
-    libfixeypointy::Decimal decimal;
+    libfixeypointy::Decimal *decimal;
     uint32_t scale;
 };
 
 /// @brief
 /// @param input The string represented the decimal
 /// @return The pointer to the decimal struct
-extern "C" void *_fxypty_in(char *input) {
-    FxyPty_Decimal *decimal = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    decimal->decimal =
-        libfixeypointy::Decimal(input, libfixeypointy::Decimal::DEFAULT_SCALE);
-    decimal->scale = libfixeypointy::Decimal::DEFAULT_SCALE;
-    return decimal;
+extern "C" void *_fxypty_in(char *input, uint64_t scale) {
+    FxyPty_Decimal *wrapped_decimal =
+        (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    wrapped_decimal->scale = (libfixeypointy::Decimal::ScaleType)scale;
+    wrapped_decimal->decimal =
+        new libfixeypointy::Decimal(std::string(input), wrapped_decimal->scale);
+    return wrapped_decimal;
 }
 
 /// @brief
@@ -39,60 +40,88 @@ extern "C" void *_fxypty_in(char *input) {
 /// @param in
 extern "C" void _fxypty_out(char out[64], void *in) {
     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
-    std::strncpy(out, decimal->decimal.ToString(decimal->scale).c_str(), 64);
+    std::strncpy(out, decimal->decimal->ToString(decimal->scale).c_str(), 64);
 }
 
-// extern "C" void *decimal_add_impl(void *a, void *b) {
-//     TypeDecimal *a_val = (TypeDecimal *)a;
-//     TypeDecimal *b_val = (TypeDecimal *)b;
+/// @brief
+/// @param a
+/// @param b
+/// @return
+extern "C" void *_fxypty_add(void *a, void *b) {
+    FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
+    FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
+    assert(wrapped_a->scale == wrapped_b->scale);
 
-//     uint32_t new_scale = Decimal::MatchScales(a_val->decimal, b_val->decimal,
-//     a_val->scale, b_val->scale); TypeDecimal *result = new
-//     TypeDecimal(*(a_val->decimal), new_scale);
-//     *(result->decimal) += *(b_val->decimal);
+    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
+    result->scale = wrapped_a->scale;
+    result->decimal->Add(*(wrapped_b->decimal));
 
-//     return (void *) result;
-// }
+    return (void *)result;
+}
 
-// extern "C" void *decimal_sub_impl(void *a, void *b) {
-//     TypeDecimal *a_val = (TypeDecimal *)a;
-//     TypeDecimal *b_val = (TypeDecimal *)b;
+extern "C" void *_fxypty_subtract(void *a, void *b) {
+    FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
+    FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
+    assert(wrapped_a->scale == wrapped_b->scale);
 
-//     uint32_t new_scale = Decimal::MatchScales(a_val->decimal, b_val->decimal,
-//     a_val->scale, b_val->scale); TypeDecimal *result = new
-//     TypeDecimal(*(a_val->decimal), new_scale);
-//     *(result->decimal) -= *(b_val->decimal);
+    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
+    result->scale = wrapped_a->scale;
+    result->decimal->Subtract(*(wrapped_b->decimal));
 
-//     return (void *) result;
-// }
+    return (void *)result;
+}
 
-// extern "C" void *decimal_mul_impl(void *a, void *b) {
-//     TypeDecimal *a_val = (TypeDecimal *)a;
-//     TypeDecimal *b_val = (TypeDecimal *)b;
+extern "C" void *_fxypty_multiply(void *a, void *b) {
+    FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
+    FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
+    assert(wrapped_a->scale == wrapped_b->scale);
 
-//     uint32_t new_scale = Decimal::MatchScales(a_val->decimal, b_val->decimal,
-//     a_val->scale, b_val->scale); TypeDecimal *result = new
-//     TypeDecimal(*(a_val->decimal), new_scale);
-//     *(result->decimal).Multiply(*(b_val->decimal), new_scale);
+    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
+    result->scale = wrapped_a->scale;
+    result->decimal->Multiply(*(wrapped_b->decimal), wrapped_a->scale);
 
-//     return (void *) result;
-// }
+    return (void *)result;
+}
 
-// extern "C" void *decimal_div_impl(void *a, void *b) {
-//     TypeDecimal *a_val = (TypeDecimal *)a;
-//     TypeDecimal *b_val = (TypeDecimal *)b;
+extern "C" void *_fxypty_divide(void *a, void *b) {
+    FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
+    FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
+    assert(wrapped_a->scale == wrapped_b->scale);
 
-//     uint32_t new_scale = Decimal::MatchScales(a_val->decimal, b_val->decimal,
-//     a_val->scale, b_val->scale); TypeDecimal *result = new
-//     TypeDecimal(*(a_val->decimal), new_scale);
-//     *(result->decimal).Divide(*(b_val->decimal), new_scale);
+    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
+    result->scale = wrapped_a->scale;
+    result->decimal->Divide(*(wrapped_b->decimal), wrapped_a->scale);
 
-//     return (void *) result;
-// }
+    return (void *)result;
+}
 
-// extern "C" int decimal_cmp_impl(void *a, void *b) {
-//     TypeDecimal *a_val = (TypeDecimal *)a;
-//     TypeDecimal *b_val = (TypeDecimal *)b;
+extern "C" int _fxypty_compare(void *a, void *b) {
+    libfixeypointy::Decimal::NativeType native_value;
+    int compare_result;
+    
+    FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
+    FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
+    assert(wrapped_a->scale == wrapped_b->scale);
 
-//     return *(a_val->decimal).Compare(*(b_val->decimal));
-// }
+    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
+    result->scale = wrapped_a->scale;
+    result->decimal->Subtract(*(wrapped_b->decimal));
+
+    native_value = result->decimal->ToNative();
+    if (native_value > 0) {
+        compare_result = 1;
+    } else if (native_value < 0) {
+        compare_result = -1;
+    } else {
+        compare_result = 0;
+    }
+
+    pfree(result);
+
+    return compare_result;
+}

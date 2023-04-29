@@ -1,16 +1,16 @@
 // clang-format off
-#include "../../src/include/postgres.h"
-#include "../../src/include/fmgr.h"
+#include "postgres.h"
+#include "fmgr.h"
+#include "utils/array.h"
 // clang-format on
 
-void *_fxypty_in(char *input);
+void *_fxypty_in(char *input, uint64_t scale);
 void _fxypty_out(char out[64], void *in);
-
-// extern void *decimal_add_impl(void *a, void *b);
-// extern void *decimal_sub_impl(void *a, void *b);
-// extern void *decimal_mul_impl(void *a, void *b);
-// extern void *decimal_div_impl(void *a, void *b);
-// extern int decimal_cmp_impl(void *a, void *b);
+void *_fxypty_add(void *a, void *b);
+void *_fxypty_subtract(void *a, void *b);
+void *_fxypty_multiply(void *a, void *b);
+void *_fxypty_divide(void *a, void *b);
+int _fxypty_compare(void *a, void *b);
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -18,164 +18,227 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(fxypty_in);
 PG_FUNCTION_INFO_V1(fxypty_out);
+PG_FUNCTION_INFO_V1(fxypty_typmod_in);
+PG_FUNCTION_INFO_V1(fxypty_typmod_out);
+
+PG_FUNCTION_INFO_V1(fxypty);
+
+PG_FUNCTION_INFO_V1(fxypty_add);
+PG_FUNCTION_INFO_V1(fxypty_subtract);
+PG_FUNCTION_INFO_V1(fxypty_multiply);
+PG_FUNCTION_INFO_V1(fxypty_divide);
+PG_FUNCTION_INFO_V1(fxypty_eq);
+PG_FUNCTION_INFO_V1(fxypty_neq);
+PG_FUNCTION_INFO_V1(fxypty_lt);
+PG_FUNCTION_INFO_V1(fxypty_gt);
+PG_FUNCTION_INFO_V1(fxypty_lte);
+PG_FUNCTION_INFO_V1(fxypty_gte);
+
+#define MAXIMUM_DIGIT 38
+#define DEFAULT_SCALE 2
 
 /*****************************************************************************
  * Input/Output functions
  *****************************************************************************/
 
+/// @brief
+/// @param
+/// @return
 Datum fxypty_in(PG_FUNCTION_ARGS) {
     char *str = PG_GETARG_CSTRING(0);
-
     char input_buffer[64];
     void *result;
 
-    if (sscanf(str, "%s", input_buffer) != 1)
-        ereport(ERROR, (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-                        errmsg("invalid input syntax for type %s: \"%s\"",
-                               "fxypty", str)));
+    // If the typmod check starts here
+    int32 number_of_digits;
+    int32 number_of_fractional_digits;
+    int32 typmod;
 
-    // FIXME: Try-catch
-    result = _fxypty_in(input_buffer);
+    number_of_digits = MAXIMUM_DIGIT;
+    number_of_fractional_digits = DEFAULT_SCALE;
+    typmod = PG_GETARG_INT32(2);
+    if (typmod != -1) {
+        number_of_digits = (typmod >> 16) & 0xffff;
+        number_of_fractional_digits = typmod & 0xffff;
+    }
+
+    // FIXME: Check whether the number_of_digits matches or not
+    (void)number_of_digits;
+
+    // Check input syntax
+    if (sscanf(str, "%s", input_buffer) != 1) {
+        ereport(ERROR, (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                        errmsg("invalid syntax for type %s: \"%s\"",
+                               "fxypty", str)));
+    }
+
+    // Generate input
+    result = _fxypty_in(input_buffer, number_of_fractional_digits);
+
     PG_RETURN_POINTER(result);
 }
 
+/// @brief
+/// @param
+/// @return
 Datum fxypty_out(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
-    
-    // FIXME: Try-catch
+
+    // Generate output
     char *result = (char *)palloc(sizeof(char) * 64);
     _fxypty_out(result, decimal);
-
-    printf("fxypty_out %s\n", result);
 
     PG_RETURN_CSTRING(result);
 }
 
-// PG_FUNCTION_INFO_V1(decimal_add);
+/// @brief
+/// @param
+/// @return
+Datum fxypty_typmod_in(PG_FUNCTION_ARGS) {
+    ArrayType *ta = PG_GETARG_ARRAYTYPE_P(0);
+    int n;
+    int32 *tl = ArrayGetIntegerTypmods(ta, &n);
+    int32 typmod;
+    int32 number_of_digits = tl[0];
+    int32 number_of_fractional_digits = tl[1];
 
-// Datum decimal_add(PG_FUNCTION_ARGS) {
-//     void *result;
+    if (n == 2) {
+        if (number_of_digits > 38 || number_of_digits < 0 ||
+            number_of_digits - number_of_fractional_digits < 0) {
+            ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                            errmsg("invalid type modifier")));
+        }
+        typmod = (number_of_digits << 16) | number_of_fractional_digits;
+    } else {
+        ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                        errmsg("invalid type modifier")));
+        typmod = 0;
+    }
 
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
+    PG_RETURN_INT32(typmod);
+}
 
-//     result = decimal_add_impl(a, b);
+/// @brief
+/// @param
+/// @return
+Datum fxypty_typmod_out(PG_FUNCTION_ARGS) {
+    int32 typmod = PG_GETARG_INT32(0);
+    int32 number_of_digits = (typmod >> 16) & 0xffff;
+    int32 number_of_fractional_digits = typmod & 0xffff;
+    char *result = (char *)palloc(sizeof(char) * 64);
 
-//     PG_RETURN_POINTER(result);
-// }
+    if (typmod == -1) {
+        ereport(ERROR, (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                        errmsg("invalid typmod for type %s", "fxypty")));
+    }
 
-// PG_FUNCTION_INFO_V1(decimal_sub);
+    if (typmod >= 0) {
+        snprintf(result, 64, "(%d,%d)", number_of_digits,
+                 number_of_fractional_digits);
+    } else {
+        *result = '\0';
+    }
 
-// Datum decimal_sub(PG_FUNCTION_ARGS) {
-//     void *result;
+    PG_RETURN_CSTRING(result);
+}
 
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
+Datum fxypty(PG_FUNCTION_ARGS) {
+    void *decimal = (void *)PG_GETARG_POINTER(0);
+    int32 typmod = PG_GETARG_INT32(1);
+    Datum result;
 
-//     result = decimal_sub_impl(a, b);
+    if (typmod != -1) {
+        result = DirectFunctionCall1(fxypty_out, (uint64)decimal);
+        result = DirectFunctionCall3(fxypty_in, result, 0, typmod);
+    }
 
-//     PG_RETURN_POINTER(result);
-// }
+    PG_RETURN_POINTER(decimal);
+}
 
-// PG_FUNCTION_INFO_V1(decimal_mul);
+Datum fxypty_add(PG_FUNCTION_ARGS) {
+    void *result;
 
-// Datum decimal_mul(PG_FUNCTION_ARGS) {
-//     void *result;
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    result = _fxypty_add(a, b);
 
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
+    PG_RETURN_POINTER(result);
+}
 
-//     result = decimal_mul_impl(a, b);
+Datum fxypty_subtract(PG_FUNCTION_ARGS) {
+    void *result;
 
-//     PG_RETURN_POINTER(result);
-// }
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    result = _fxypty_subtract(a, b);
 
-// PG_FUNCTION_INFO_V1(decimal_div);
+    PG_RETURN_POINTER(result);
+}
 
-// Datum decimal_div(PG_FUNCTION_ARGS) {
-//     void *result;
+Datum fxypty_multiply(PG_FUNCTION_ARGS) {
+    void *result;
 
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    result = _fxypty_multiply(a, b);
 
-//     result = decimal_div_impl(a, b);
+    PG_RETURN_POINTER(result);
+}
 
-//     PG_RETURN_POINTER(result);
-// }
+Datum fxypty_divide(PG_FUNCTION_ARGS) {
+    void *result;
 
-// PG_FUNCTION_INFO_V1(decimal_eq);
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    result = _fxypty_divide(a, b);
 
-// Datum decimal_eq(PG_FUNCTION_ARGS) {
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
+    PG_RETURN_POINTER(result);
+}
 
-//     int diff = decimal_cmp_impl(a, b);
+Datum fxypty_eq(PG_FUNCTION_ARGS) {
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    int result = _fxypty_compare(a, b);
 
-//     PG_RETURN_BOOL(diff == 0);
-// }
+    PG_RETURN_BOOL(result == 0);
+}
 
-// PG_FUNCTION_INFO_V1(decimal_ne);
+Datum fxypty_neq(PG_FUNCTION_ARGS) {
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    int result = _fxypty_compare(a, b);
 
-// Datum decimal_ne(PG_FUNCTION_ARGS) {
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
+    PG_RETURN_BOOL(result != 0);
+}
 
-//     int diff = decimal_cmp_impl(a, b);
+Datum fxypty_lt(PG_FUNCTION_ARGS) {
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    int result = _fxypty_compare(a, b);
 
-//     PG_RETURN_BOOL(diff != 0);
-// }
+    PG_RETURN_BOOL(result < 0);
+}
 
-// PG_FUNCTION_INFO_V1(decimal_lt);
+Datum fxypty_gt(PG_FUNCTION_ARGS) {
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    int result = _fxypty_compare(a, b);
 
-// Datum decimal_lt(PG_FUNCTION_ARGS) {
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
+    PG_RETURN_BOOL(result > 0);
+}
 
-//     int diff = decimal_cmp_impl(a, b);
+Datum fxypty_lte(PG_FUNCTION_ARGS) {
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    int result = _fxypty_compare(a, b);
 
-//     PG_RETURN_BOOL(diff < 0);
-// }
+    PG_RETURN_BOOL(result <= 0);
+}
 
-// PG_FUNCTION_INFO_V1(decimal_gt);
+Datum fxypty_gte(PG_FUNCTION_ARGS) {
+    void *a = (void *)PG_GETARG_POINTER(0);
+    void *b = (void *)PG_GETARG_POINTER(1);
+    int result = _fxypty_compare(a, b);
 
-// Datum decimal_gt(PG_FUNCTION_ARGS) {
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
-
-//     int diff = decimal_cmp_impl(a, b);
-
-//     PG_RETURN_BOOL(diff > 0);
-// }
-
-// PG_FUNCTION_INFO_V1(decimal_le);
-
-// Datum decimal_le(PG_FUNCTION_ARGS) {
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
-
-//     int diff = decimal_cmp_impl(a, b);
-
-//     PG_RETURN_BOOL(diff <= 0);
-// }
-
-// PG_FUNCTION_INFO_V1(decimal_ge);
-
-// Datum decimal_ge(PG_FUNCTION_ARGS) {
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
-
-//     int diff = decimal_cmp_impl(a, b);
-
-//     PG_RETURN_BOOL(diff >= 0);
-// }
-
-// PG_FUNCTION_INFO_V1(decimal_cmp);
-
-// Datum decimal_cmp(PG_FUNCTION_ARGS) {
-//     void *a = (void *)PG_GETARG_POINTER(0);
-//     void *b = (void *)PG_GETARG_POINTER(1);
-
-//     int diff = decimal_cmp_impl(a, b);
-
-//     PG_RETURN_INT32(diff);
-// }
+    PG_RETURN_BOOL(result >= 0);
+}
