@@ -66,6 +66,14 @@ CREATE FUNCTION fxypty_gte(fxypty, fxypty)
     RETURNS bool AS 'MODULE_PATHNAME'
     LANGUAGE C IMMUTABLE STRICT;
 
+CREATE FUNCTION fxypty_smaller(fxypty, fxypty)
+    RETURNS fxypty AS 'MODULE_PATHNAME'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION fxypty_larger(fxypty, fxypty)
+    RETURNS fxypty AS 'MODULE_PATHNAME'
+    LANGUAGE C IMMUTABLE STRICT;
+
 CREATE OPERATOR + (
     leftarg = fxypty,
     rightarg = fxypty,
@@ -146,3 +154,51 @@ CREATE FUNCTION fxypty(fxypty, int4)
 
 CREATE CAST (fxypty AS fxypty)
 	WITH FUNCTION fxypty(fxypty, int4) AS ASSIGNMENT;
+
+-- aggregates
+CREATE FUNCTION fxypty_smaller(fxypty, fxypty) 
+    RETURNS fxypty AS 'MODULE_PATHNAME' 
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION fxypty_larger(fxypty, fxypty) 
+    RETURNS fxypty AS 'MODULE_PATHNAME' 
+    LANGUAGE C IMMUTABLE STRICT;
+
+-- CREATE AGGREGATE sum(fxypty) (
+--     SFUNC = fxypty_add,
+--     STYPE = fxypty,
+--     INITCOND = '0'
+-- );
+
+CREATE AGGREGATE min(fxypty) (
+    SFUNC = fxypty_smaller,
+    STYPE = fxypty,
+    SORTOP = <
+);
+
+CREATE AGGREGATE max(fxypty) (
+    SFUNC = fxypty_larger,
+    STYPE = fxypty,
+    SORTOP = >
+);
+
+-- CREATE AGGREGATE avg (fxypty) (
+--     SFUNC = fxypty_accum,
+--     STYPE = fxypty [],
+--     FINALFUNC = lfp_avg,
+--     INITCOND = '{0,0,0}'
+-- );
+
+-- CREATE AGGREGATE var(fxypty) (
+--     SFUNC = fxypty_accum,
+--     STYPE = fxypty [],
+--     FINALFUNC = lfp_var,
+--     INITCOND = '{0,0,0}'
+-- );
+
+-- CREATE AGGREGATE stdev(fxypty) (
+--     SFUNC = fxypty_accum,
+--     STYPE = fxypty [],
+--     FINALFUNC = lfp_var,
+--     INITCOND = '{0,0,0}'
+-- );
