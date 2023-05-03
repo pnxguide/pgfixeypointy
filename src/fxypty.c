@@ -33,6 +33,8 @@ PG_FUNCTION_INFO_V1(fxypty_lt);
 PG_FUNCTION_INFO_V1(fxypty_gt);
 PG_FUNCTION_INFO_V1(fxypty_lte);
 PG_FUNCTION_INFO_V1(fxypty_gte);
+PG_FUNCTION_INFO_V1(fxypty_smaller);
+PG_FUNCTION_INFO_V1(fxypty_larger);
 
 #define MAXIMUM_DIGIT 38
 #define DEFAULT_SCALE 2
@@ -246,17 +248,15 @@ Datum fxypty_gte(PG_FUNCTION_ARGS) {
 Datum fxypty_smaller(PG_FUNCTION_ARGS) {
   void *a = (void *)PG_GETARG_POINTER(0);
   void *b = (void *)PG_GETARG_POINTER(1);
-  int result = _fxypty_compare(a, b);
+  void *smaller = _fxypty_compare(a, b) < 0 ? a : b;
 
-  void *smaller = result < 0 ? a : b;
   PG_RETURN_POINTER(smaller);
 }
 
 Datum fxypty_larger(PG_FUNCTION_ARGS) {
   void *a = (void *)PG_GETARG_POINTER(0);
   void *b = (void *)PG_GETARG_POINTER(1);
-  int result = _fxypty_compare(a, b);
+  void *larger = _fxypty_compare(a, b) >= 0 ? a : b;
 
-  void *larger = result >= 0 ? a : b;
   PG_RETURN_POINTER(larger);
 }
