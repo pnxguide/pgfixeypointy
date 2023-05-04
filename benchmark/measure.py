@@ -38,7 +38,7 @@ for idx in range(3):
     
     print("{}, {}".format(table_name, val_type))
 
-    clean_query = f"DROP TABLE IF EXISTS {table_name}"
+    clean_query = f"DROP TABLE IF EXISTS {table_name};"
     create_query = f"CREATE TABLE {table_name} (x {val_type} NOT NULL, y {val_type} NOT NULL);"
     
     f.write("{}, {}\n".format(table_name, val_type))
