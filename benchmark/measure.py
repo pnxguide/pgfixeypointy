@@ -20,7 +20,7 @@ cur = conn.cursor()
 cur.execute(f"DROP EXTENSION IF EXISTS pgfixeypointy CASCADE;")
 cur.execute(f"CREATE EXTENSION pgfixeypointy;")
 
-f = open("./output", "w")
+f = open("./output.out", "w")
 
 val_x_list = []
 val_y_list = []
