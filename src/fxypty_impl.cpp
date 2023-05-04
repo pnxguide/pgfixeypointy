@@ -23,9 +23,11 @@ struct FxyPty_Decimal {
     uint32_t scale;
 };
 
-/// @brief
-/// @param input The string represented the decimal
-/// @return The pointer to the decimal struct
+/// @brief Parse an input string and generate a fxypty object based on the
+/// string.
+/// @param input The input string.
+/// @param scale The scale.
+/// @return The pointer to the fxypty object.
 extern "C" void *_fxypty_in(char *input, uint64_t scale) {
     FxyPty_Decimal *wrapped_decimal =
         (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
@@ -35,18 +37,19 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
     return wrapped_decimal;
 }
 
-/// @brief
-/// @param out
-/// @param in
+/// @brief Generate a string from the fxypty object.
+/// @param out The output string.
+/// @param in The input pointer to the fxypty object.
 extern "C" void _fxypty_out(char out[64], void *in) {
     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
     std::strncpy(out, decimal->decimal->ToString(decimal->scale).c_str(), 64);
 }
 
-/// @brief
-/// @param a
-/// @param b
-/// @return
+/// @brief Add two fxypty objects.
+/// @param a The pointer to the first fxypty object.
+/// @param b The pointer to the second fxypty object.
+/// @return The pointer to the new fxypty object containing the sum of both the
+/// fxypty objects.
 extern "C" void *_fxypty_add(void *a, void *b) {
     FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
     FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
@@ -60,6 +63,11 @@ extern "C" void *_fxypty_add(void *a, void *b) {
     return (void *)result;
 }
 
+/// @brief Subtract two fxypty objects.
+/// @param a The pointer to the first fxypty object.
+/// @param b The pointer to the second fxypty object.
+/// @return The pointer to the new fxypty object containing the difference of
+/// both the fxypty objects.
 extern "C" void *_fxypty_subtract(void *a, void *b) {
     FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
     FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
@@ -73,6 +81,11 @@ extern "C" void *_fxypty_subtract(void *a, void *b) {
     return (void *)result;
 }
 
+/// @brief Multiply two fxypty objects.
+/// @param a The pointer to the first fxypty object.
+/// @param b The pointer to the second fxypty object.
+/// @return The pointer to the new fxypty object containing the product of both
+/// the fxypty objects.
 extern "C" void *_fxypty_multiply(void *a, void *b) {
     FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
     FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
@@ -86,6 +99,11 @@ extern "C" void *_fxypty_multiply(void *a, void *b) {
     return (void *)result;
 }
 
+/// @brief Divide two fxypty objects.
+/// @param a The pointer to the first fxypty object.
+/// @param b The pointer to the second fxypty object.
+/// @return The pointer to the new fxypty object containing the quotient of both
+/// the fxypty objects.
 extern "C" void *_fxypty_divide(void *a, void *b) {
     FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
     FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
@@ -99,6 +117,11 @@ extern "C" void *_fxypty_divide(void *a, void *b) {
     return (void *)result;
 }
 
+/// @brief Compare two fxypty objects.
+/// @param a The pointer to the first fxypty object.
+/// @param b The pointer to the second fxypty object.
+/// @return Return 0 when both the values are equivalent. Return 1 when the
+/// first value are greater. Return -1 when the first value are lesser.
 extern "C" int _fxypty_compare(void *a, void *b) {
     libfixeypointy::Decimal::NativeType native_value;
     int compare_result;
