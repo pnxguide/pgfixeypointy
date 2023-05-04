@@ -8,9 +8,9 @@ conn = psycopg2.connect(
     user="postgres"
 )
 
-lines = 10000
-bound = 1000
-trials = 4
+lines = 1000000
+bound = 100000
+trials = 11
 
 table_list = ["test_fxypty", "test_numeric", "test_double"]
 type_list = ["fxypty(30,10)", "NUMERIC(30,10)", "DOUBLE PRECISION"]
@@ -82,6 +82,7 @@ for idx in range(3):
             for query in query_list:
                 f.write("{}, ".format(query))
             f.write("\n")
+            continue
         for i in range(len(query_list)):
             f.write("{}, ".format(result[i][trial] / 1000))
         f.write("\n")

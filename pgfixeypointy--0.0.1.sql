@@ -146,3 +146,62 @@ CREATE FUNCTION fxypty(fxypty, int4)
 
 CREATE CAST (fxypty AS fxypty)
 	WITH FUNCTION fxypty(fxypty, int4) AS ASSIGNMENT;
+
+-- aggregates
+CREATE FUNCTION fxypty_smaller(fxypty, fxypty) 
+    RETURNS fxypty AS 'MODULE_PATHNAME' 
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION fxypty_larger(fxypty, fxypty) 
+    RETURNS fxypty AS 'MODULE_PATHNAME' 
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE AGGREGATE sum(fxypty) (
+    sfunc = fxypty_add,
+    stype = fxypty
+);
+
+CREATE AGGREGATE min(fxypty) (
+    sfunc = fxypty_smaller,
+    stype = fxypty
+);
+
+CREATE AGGREGATE max(fxypty) (
+    sfunc = fxypty_larger,
+    stype = fxypty
+);
+
+-- CREATE FUNCTION fxypty_avg_accum(fxypty[], fxypty)
+--     RETURNS fxypty[] AS
+--     'SELECT array[$1[1] + $2, $1[2] + CAST (0 AS fxypty)];'
+--     LANGUAGE SQL;
+
+-- CREATE FUNCTION fxypty_avg_final(fxypty [])
+--     RETURNS fxypty AS
+--     'SELECT CASE 
+--         WHEN $1[2] != 0
+--         THEN $1[1]/$1[2]
+--         ELSE null::fxypty
+--     END;'
+--     LANGUAGE SQL;
+
+-- CREATE AGGREGATE avg(fxypty) (
+--     sfunc = fxypty_avg_accum,
+--     stype = fxypty[],
+--     FINALFUNC = fxypty_avg_final,
+--     INITCOND = '{0,0}'
+-- );
+
+-- CREATE AGGREGATE var(fxypty) (
+--     sfunc = fxypty_accum,
+--     stype = fxypty [],
+--     FINALFUNC = lfp_var,
+--     INITCOND = '{0,0,0}'
+-- );
+
+-- CREATE AGGREGATE stdev(fxypty) (
+--     sfunc = fxypty_accum,
+--     stype = fxypty [],
+--     FINALFUNC = lfp_var,
+--     INITCOND = '{0,0,0}'
+-- );

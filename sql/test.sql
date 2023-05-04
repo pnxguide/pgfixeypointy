@@ -158,8 +158,9 @@ SELECT x / y FROM test_fxypty;
 SELECT SUM(x) FROM test_fxypty;
 SELECT MIN(x) FROM test_fxypty;
 SELECT MAX(x) FROM test_fxypty;
-SELECT AVG(x) FROM test_fxypty;
 SELECT COUNT(x) FROM test_fxypty;
+
+SELECT AVG(x) FROM test_fxypty;
 SELECT VARIANCE(x) FROM test_fxypty;
 SELECT STDDEV(x) FROM test_fxypty;
 
