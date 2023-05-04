@@ -246,16 +246,11 @@ Datum fxypty_gte(PG_FUNCTION_ARGS) {
 }
 
 Datum fxypty_smaller(PG_FUNCTION_ARGS) {
-  void *result;
   void *a = (void *)PG_GETARG_POINTER(0);
   void *b = (void *)PG_GETARG_POINTER(1);
-  if (_fxypty_compare(a, b) < 0) {
-    result = a;
-  } else {
-    result = b;
-  }
+  void *smaller = _fxypty_compare(a, b) < 0 ? a : b;
 
-  PG_RETURN_POINTER(result);
+  PG_RETURN_POINTER(smaller);
 }
 
 Datum fxypty_larger(PG_FUNCTION_ARGS) {
@@ -264,26 +259,4 @@ Datum fxypty_larger(PG_FUNCTION_ARGS) {
   void *larger = _fxypty_compare(a, b) >= 0 ? a : b;
 
   PG_RETURN_POINTER(larger);
-}
-
-// Datum fxypty_avg_accum(PG_FUNCTION_ARGS) {
-//   void *accum = (void *)PG_GETARG_POINTER(0);
-
-//   PG_RETURN_POINTER(accum);
-// }
-
-// Datum fxypty_avg_final(PG_FUNCTION_ARGS) {
-//   void *a = (void *)PG_GETARG_POINTER(0);
-//   void *b = (void *)PG_GETARG_POINTER(1);
-//   void *larger = _fxypty_compare(a, b) >= 0 ? a : b;
-
-//   PG_RETURN_POINTER(larger);
-// }
-
-
-Datum
-fxypty_accum(PG_FUNCTION_ARGS)
-{
-	ArrayType *transarray = PG_GETARG_ARRAYTYPE_P(0);
-	void *val = PG_GETARG_POINTER(1);
 }

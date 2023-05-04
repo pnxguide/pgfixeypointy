@@ -16,7 +16,6 @@ extern "C" {
 #undef dngettext
 
 #include "../third_party/libfixeypointy/src/decimal.h"
-#include "utils/array.h"
 
 /// @brief
 struct FxyPty_Decimal {
@@ -103,7 +102,7 @@ extern "C" void *_fxypty_divide(void *a, void *b) {
 extern "C" int _fxypty_compare(void *a, void *b) {
     libfixeypointy::Decimal::NativeType native_value;
     int compare_result;
-    
+
     FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
     FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
     assert(wrapped_a->scale == wrapped_b->scale);
@@ -126,23 +125,3 @@ extern "C" int _fxypty_compare(void *a, void *b) {
 
     return compare_result;
 }
-
-// extern "C" void *_fxypty_accum(ArrayType *transarray, void *val) {
-//     FxyPty_Decimal *wrapped_arr = (FxyPty_Decimal *) ARR_DATA_PTR(transarray);
-//     FxyPty_Decimal *wrapped_val = (FxyPty_Decimal *) val;
-//     assert(wrapped_arr[0].scale == wrapped_val->scale);
-//     assert(wrapped_arr[1].scale == wrapped_val->scale);
-
-//     wrapped_arr[0].decimal->Add(*(wrapped_val->decimal));
-
-//     char * const_one_char = (char*)palloc(1);
-//     memset(const_one_char, 1, sizeof(const_one_char));
-//     FxyPty_Decimal *const_one = (FxyPty_Decimal *)_fxypty_in(const_one_char, wrapped_val->scale);
-//     wrapped_arr[1].decimal->Add(*const_one->decimal);
-//     pfree(const_one_char);
-//     // would be better if we have +1
-
-//     // assemble result
-
-//     return (void *)result;
-// }
