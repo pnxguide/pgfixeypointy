@@ -8,12 +8,12 @@ conn = psycopg2.connect(
     user="postgres"
 )
 
-lines = 1000000
+lines = 500000
 bound = 100000
-trials = 11
+trials = 6
 
-table_list = ["test_fxypty", "test_numeric", "test_double"]
-type_list = ["fxypty(30,10)", "NUMERIC(30,10)", "DOUBLE PRECISION"]
+table_list = ["test_fxypty", "test_numeric", "test_double", "test_real", "test_decimal"]
+type_list = ["fxypty(30,10)", "NUMERIC(30,10)", "DOUBLE PRECISION", "REAL", "DECIMAL(30,10)"]
 
 cur = conn.cursor()
 
@@ -26,13 +26,13 @@ val_x_list = []
 val_y_list = []
 # query_list = ["init", "*","x + y","x - y","x * y","x / y","SUM(x)","MIN(x)","MAX(x)","AVG(x)","COUNT(x)","VARIANCE(x)","STDDEV(x)"]
 
-query_list = ["init", "*","x + y","x - y","x * y","x / y","SUM(x)","MIN(x)","MAX(x)","COUNT(x)"]
+query_list = ["init", "*","x+y","x-y","x*y","x/y","SUM(x)","MIN(x)","MAX(x)","COUNT(x)","SUM(x),SUM(y)", "MIN(x),MIN(y)", "MAX(x),MAX(y)", "COUNT(x),COUNT(y)"]
 
 for line in range(lines):
     val_x_list.append(random.uniform(1, bound))
     val_y_list.append(random.uniform(1, bound))
 
-for idx in range(3):
+for idx in range(len(table_list)):
     table_name = table_list[idx]
     val_type = type_list[idx]
     
@@ -69,6 +69,7 @@ for idx in range(3):
             if query == "init":
                 continue;
             ex_query = f"SELECT {query} FROM {table_name};"
+            print(ex_query)
             start_time = time.perf_counter_ns()
             cur.execute(ex_query)
             rows = cur.fetchall()
@@ -80,11 +81,11 @@ for idx in range(3):
     for trial in range(trials):
         if trial == 0:
             for query in query_list:
-                f.write("{}, ".format(query))
+                f.write("{} ".format(query))
             f.write("\n")
             continue
         for i in range(len(query_list)):
-            f.write("{}, ".format(result[i][trial] / 1000))
+            f.write("{} ".format(result[i][trial] / 1000))
         f.write("\n")
 
 conn.commit()

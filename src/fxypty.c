@@ -37,7 +37,7 @@ PG_FUNCTION_INFO_V1(fxypty_smaller);
 PG_FUNCTION_INFO_V1(fxypty_larger);
 
 #define MAXIMUM_DIGIT 38
-#define DEFAULT_SCALE 2
+#define DEFAULT_SCALE 12
 
 /**
  * Casting functions

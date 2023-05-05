@@ -15,13 +15,22 @@ extern "C" {
 #undef ngettext
 #undef dngettext
 
+#include <iostream>
+
 #include "../third_party/libfixeypointy/src/decimal.h"
 
 /// @brief
 struct FxyPty_Decimal {
-    libfixeypointy::Decimal *decimal;
+    int64_t hi, lo;
     uint32_t scale;
 };
+
+/// @brief
+/// @param x
+/// @return
+inline libfixeypointy::Decimal::NativeType _pack128(FxyPty_Decimal *x) {
+    return (((__int128_t)x->hi) << 64) | (__int128_t)x->lo;
+}
 
 /// @brief Parse an input string and generate a fxypty object based on the
 /// string.
@@ -31,9 +40,18 @@ struct FxyPty_Decimal {
 extern "C" void *_fxypty_in(char *input, uint64_t scale) {
     FxyPty_Decimal *wrapped_decimal =
         (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+
     wrapped_decimal->scale = (libfixeypointy::Decimal::ScaleType)scale;
-    wrapped_decimal->decimal =
-        new libfixeypointy::Decimal(std::string(input), wrapped_decimal->scale);
+    libfixeypointy::Decimal tmp(std::string(input), wrapped_decimal->scale);
+    libfixeypointy::Decimal::NativeType lo =
+        tmp.ToNative() &
+        (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+    libfixeypointy::Decimal::NativeType hi =
+        (tmp.ToNative() >> 64) &
+        (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+    wrapped_decimal->lo = lo;
+    wrapped_decimal->hi = hi;
+
     return wrapped_decimal;
 }
 
@@ -42,7 +60,8 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
 /// @param in The input pointer to the fxypty object.
 extern "C" void _fxypty_out(char out[64], void *in) {
     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
-    std::strncpy(out, decimal->decimal->ToString(decimal->scale).c_str(), 64);
+    libfixeypointy::Decimal tmp(_pack128(decimal));
+    std::strncpy(out, tmp.ToString(decimal->scale).c_str(), 64);
 }
 
 /// @brief Add two fxypty objects.
@@ -56,9 +75,18 @@ extern "C" void *_fxypty_add(void *a, void *b) {
     assert(wrapped_a->scale == wrapped_b->scale);
 
     FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
     result->scale = wrapped_a->scale;
-    result->decimal->Add(*(wrapped_b->decimal));
+
+    try {
+        libfixeypointy::Decimal tmp(_pack128(wrapped_a));
+        tmp.Add(libfixeypointy::Decimal(_pack128(wrapped_b)));
+        result->lo = tmp.ToNative() &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+        result->hi = (tmp.ToNative() >> 64) &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+    } catch (std::runtime_error e) {
+        return nullptr;
+    }
 
     return (void *)result;
 }
@@ -74,9 +102,18 @@ extern "C" void *_fxypty_subtract(void *a, void *b) {
     assert(wrapped_a->scale == wrapped_b->scale);
 
     FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
     result->scale = wrapped_a->scale;
-    result->decimal->Subtract(*(wrapped_b->decimal));
+
+    try {
+        libfixeypointy::Decimal tmp(_pack128(wrapped_a));
+        tmp.Subtract(libfixeypointy::Decimal(_pack128(wrapped_b)));
+        result->lo = tmp.ToNative() &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+        result->hi = (tmp.ToNative() >> 64) &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+    } catch (std::runtime_error e) {
+        return nullptr;
+    }
 
     return (void *)result;
 }
@@ -92,9 +129,18 @@ extern "C" void *_fxypty_multiply(void *a, void *b) {
     assert(wrapped_a->scale == wrapped_b->scale);
 
     FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
     result->scale = wrapped_a->scale;
-    result->decimal->Multiply(*(wrapped_b->decimal), wrapped_a->scale);
+
+    try {
+        libfixeypointy::Decimal tmp(_pack128(wrapped_a));
+        tmp.Multiply(libfixeypointy::Decimal(_pack128(wrapped_b)), result->scale);
+        result->lo = tmp.ToNative() &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+        result->hi = (tmp.ToNative() >> 64) &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+    } catch (std::runtime_error e) {
+        return nullptr;
+    }
 
     return (void *)result;
 }
@@ -110,9 +156,18 @@ extern "C" void *_fxypty_divide(void *a, void *b) {
     assert(wrapped_a->scale == wrapped_b->scale);
 
     FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
     result->scale = wrapped_a->scale;
-    result->decimal->Divide(*(wrapped_b->decimal), wrapped_a->scale);
+
+    try {
+        libfixeypointy::Decimal tmp(_pack128(wrapped_a));
+        tmp.Divide(libfixeypointy::Decimal(_pack128(wrapped_b)), result->scale);
+        result->lo = tmp.ToNative() &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+        result->hi = (tmp.ToNative() >> 64) &
+                     (libfixeypointy::Decimal::NativeType)0xffffffffffffffff;
+    } catch (std::runtime_error e) {
+        return nullptr;
+    }
 
     return (void *)result;
 }
@@ -123,28 +178,26 @@ extern "C" void *_fxypty_divide(void *a, void *b) {
 /// @return Return 0 when both the values are equivalent. Return 1 when the
 /// first value are greater. Return -1 when the first value are lesser.
 extern "C" int _fxypty_compare(void *a, void *b) {
-    libfixeypointy::Decimal::NativeType native_value;
-    int compare_result;
-
     FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
     FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
     assert(wrapped_a->scale == wrapped_b->scale);
 
-    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    result->decimal = new libfixeypointy::Decimal(*(wrapped_a->decimal));
-    result->scale = wrapped_a->scale;
-    result->decimal->Subtract(*(wrapped_b->decimal));
+    libfixeypointy::Decimal::NativeType native_value;
 
-    native_value = result->decimal->ToNative();
+    try {
+        libfixeypointy::Decimal tmp(_pack128(wrapped_a));
+        tmp.Subtract(libfixeypointy::Decimal(_pack128(wrapped_b)));
+        native_value = tmp.ToNative();
+    } catch (std::runtime_error e) {
+        return 0;
+    }
+
+    int compare_result = 0;
     if (native_value > 0) {
         compare_result = 1;
     } else if (native_value < 0) {
         compare_result = -1;
-    } else {
-        compare_result = 0;
     }
-
-    pfree(result);
 
     return compare_result;
 }
