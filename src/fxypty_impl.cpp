@@ -42,8 +42,12 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
         (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
 
     wrapped_decimal->scale = (libfixeypointy::Decimal::ScaleType)scale;
-    libfixeypointy::Decimal tmp(std::string(input), wrapped_decimal->scale);
-    std::memcpy(wrapped_decimal->bytes, &tmp, sizeof(libfixeypointy::Decimal));
+    try {
+        libfixeypointy::Decimal tmp(std::string(input), wrapped_decimal->scale);
+        std::memcpy(wrapped_decimal->bytes, &tmp, sizeof(libfixeypointy::Decimal));
+    } catch (std::runtime_error e) {
+        return NULL;
+    }
 
     return wrapped_decimal;
 }
@@ -51,10 +55,31 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
 /// @brief Generate a string from the fxypty object.
 /// @param out The output string.
 /// @param in The input pointer to the fxypty object.
-extern "C" void _fxypty_out(char out[64], void *in) {
+extern "C" const char* _fxypty_out(char out[40], void *in) {
     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
+    // __int128_t native_value = _pack128(decimal);
+
+    // int n_digits = 0;
+
+    // __int128_t tmp = native_value;
+    // while (tmp > 0) {
+    //     tmp /= 10;
+    //     ++n_digits;
+    // }
+
+    // out[n_digits] = '\0';
+
+    // while (native_value > 0) {
+    //     int digit = native_value % 10;
+    //     out[n_digits--] = digit + '0';
+    //     native_value /= 10;
+    // }
+
+    // std::strncpy(out, tmp.ToString(decimal->scale).c_str(), 64);
+    // std::strcpy(out, tmp.ToString(decimal->scale).c_str());
+    // std::strcpy(out, "101231232.223");
     libfixeypointy::Decimal tmp(_pack128(decimal));
-    std::strncpy(out, tmp.ToString(decimal->scale).c_str(), 64);
+    return tmp.ToString(decimal->scale).c_str();
 }
 
 /// @brief Add two fxypty objects.

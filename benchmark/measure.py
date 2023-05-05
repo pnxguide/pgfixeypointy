@@ -73,7 +73,7 @@ for idx in range(1):
             print(ex_query)
             start_time = time.perf_counter_ns()
             cur.execute(ex_query)
-            rows = cur.fetchall()
+            # rows = cur.fetchall()
             end_time = time.perf_counter_ns()
             result[i][trial] += (end_time - start_time)
             
