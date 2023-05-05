@@ -184,7 +184,12 @@ Datum fxypty_add(PG_FUNCTION_ARGS) {
 
     void *a = (void *)PG_GETARG_POINTER(0);
     void *b = (void *)PG_GETARG_POINTER(1);
+
     result = _fxypty_add(a, b);
+    if (result == NULL) {
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+                        errmsg("The operation returns runtime errors.")));
+    }
 
     PG_RETURN_POINTER(result);
 }
@@ -197,7 +202,12 @@ Datum fxypty_subtract(PG_FUNCTION_ARGS) {
 
     void *a = (void *)PG_GETARG_POINTER(0);
     void *b = (void *)PG_GETARG_POINTER(1);
+    
     result = _fxypty_subtract(a, b);
+    if (result == NULL) {
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+                        errmsg("The operation returns runtime errors.")));
+    }
 
     PG_RETURN_POINTER(result);
 }
@@ -210,7 +220,12 @@ Datum fxypty_multiply(PG_FUNCTION_ARGS) {
 
     void *a = (void *)PG_GETARG_POINTER(0);
     void *b = (void *)PG_GETARG_POINTER(1);
+
     result = _fxypty_multiply(a, b);
+    if (result == NULL) {
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+                        errmsg("The operation returns runtime errors.")));
+    }
 
     PG_RETURN_POINTER(result);
 }
@@ -223,7 +238,12 @@ Datum fxypty_divide(PG_FUNCTION_ARGS) {
 
     void *a = (void *)PG_GETARG_POINTER(0);
     void *b = (void *)PG_GETARG_POINTER(1);
+
     result = _fxypty_divide(a, b);
+    if (result == NULL) {
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+                        errmsg("The operation returns runtime errors.")));
+    }
 
     PG_RETURN_POINTER(result);
 }

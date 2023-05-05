@@ -19,7 +19,7 @@ CREATE FUNCTION fxypty_typmod_out(int4)
     LANGUAGE C IMMUTABLE STRICT;
 
 CREATE TYPE fxypty (
-    INTERNALLENGTH  = 32,
+    INTERNALLENGTH  = 24,
     INPUT           = fxypty_in,
     OUTPUT          = fxypty_out,
     TYPMOD_IN       = fxypty_typmod_in,

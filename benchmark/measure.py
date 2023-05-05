@@ -8,12 +8,12 @@ conn = psycopg2.connect(
     user="postgres"
 )
 
-lines = 500000
+lines = 4000000
 bound = 100000
 trials = 6
 
-table_list = ["test_fxypty", "test_numeric", "test_double", "test_real", "test_decimal"]
-type_list = ["fxypty(30,10)", "NUMERIC(30,10)", "DOUBLE PRECISION", "REAL", "DECIMAL(30,10)"]
+table_list = ["test_fxypty", "test_numeric", "test_double", "test_real"]
+type_list = ["fxypty(30,10)", "NUMERIC(30,10)", "DOUBLE PRECISION", "REAL"]
 
 cur = conn.cursor()
 
@@ -32,7 +32,8 @@ for line in range(lines):
     val_x_list.append(random.uniform(1, bound))
     val_y_list.append(random.uniform(1, bound))
 
-for idx in range(len(table_list)):
+# for idx in range(len(table_list)):
+for idx in range(1):
     table_name = table_list[idx]
     val_type = type_list[idx]
     
@@ -52,16 +53,16 @@ for idx in range(len(table_list)):
         add_query = f"INSERT INTO {table_name} (x, y) VALUES ('{val_x_list[line]}', '{val_y_list[line]}');"
         add_query_list.append(add_query)
 
+    cur.execute(clean_query)
+    cur.execute(create_query)
+    
+    start_time = time.perf_counter_ns()
+    for line in range(lines):
+        cur.execute(add_query_list[line])           
+    end_time = time.perf_counter_ns()
+
     for trial in range(trials):
-        print("try: {}".format(trial))
-        cur.execute(clean_query)
-        cur.execute(create_query)
-        
-        start_time = time.perf_counter_ns()
-        for line in range(lines):
-            cur.execute(add_query_list[line])           
-        end_time = time.perf_counter_ns()
-        
+        print("try: {}".format(trial))        
         result[0][trial] += (end_time - start_time)
         
         i = 1
