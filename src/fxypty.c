@@ -52,13 +52,14 @@ Datum fxypty(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
     int32 typmod = PG_GETARG_INT32(1);
     Datum result;
+    (void)result;
 
     if (typmod != -1) {
         result = DirectFunctionCall1(fxypty_out, (uint64)decimal);
         result = DirectFunctionCall3(fxypty_in, result, 0, typmod);
     }
 
-    PG_RETURN_POINTER(decimal);
+    PG_RETURN_DATUM(result);
 }
 
 /**
