@@ -50,7 +50,7 @@ Our project supports `libfixeypointy` as PostgreSQL's UDT. UDT is implemented in
 
 Our `Decimal` type supports four arithmetic and comparison operators as shown below, and also supports the following aggregations (which are ...).
 
-- \+, \-, \*, /, =, <>, !=, <, <=, >, >=, 
+- \+, \-, \*, /, =, <>, !=, <, <=, >, >=, SUM, MIN, MAX, AVG, STD
 
 ## Design Rationale
 
@@ -109,4 +109,10 @@ PostgreSQL supports UDTs, which allow users to define and benchmark new types. A
 
 The following list are the potential future work we think there are interesting to be explored.
 - Improve `libfixeypointy` performance based on existing techniques in existing high-performance packages
+- Support variable size: currently libfixeypointy use only 128 bit, it can be store a small decimal in a 64-bit or 32-bit
+- Support parallel aggregation to improve throughput
+- Improve the result writing (currently, ToString() function takes long time) performance
+- Support type casting to operations between different types (e.g., double + pgfixeypointy)
+- Support more aggregator (AVG, STD, VAR) 
+- Measuring more realistic workloads
 - Vectorization support
