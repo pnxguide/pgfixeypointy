@@ -55,31 +55,23 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
 /// @brief Generate a string from the fxypty object.
 /// @param out The output string.
 /// @param in The input pointer to the fxypty object.
-extern "C" const char* _fxypty_out(char out[40], void *in) {
+extern "C" void _fxypty_out(char out[40], void *in) {
     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
-    // __int128_t native_value = _pack128(decimal);
+    __int128_t native_value = _pack128(decimal);
 
-    // int n_digits = 0;
+    // Get absolute value
+    bool is_negative = native_value < 0;
+    __int128_t abs_value = is_negative ? -native_value : native_value;
 
-    // __int128_t tmp = native_value;
-    // while (tmp > 0) {
-    //     tmp /= 10;
-    //     ++n_digits;
-    // }
+    // Get fractional part
+    __int128_t integral_part = abs_value / decimal->scale;
+    __int128_t fractional_part = abs_value % decimal->scale;
 
-    // out[n_digits] = '\0';
-
-    // while (native_value > 0) {
-    //     int digit = native_value % 10;
-    //     out[n_digits--] = digit + '0';
-    //     native_value /= 10;
-    // }
-
-    // std::strncpy(out, tmp.ToString(decimal->scale).c_str(), 64);
-    // std::strcpy(out, tmp.ToString(decimal->scale).c_str());
-    // std::strcpy(out, "101231232.223");
-    libfixeypointy::Decimal tmp(_pack128(decimal));
-    return tmp.ToString(decimal->scale).c_str();
+    if (is_negative) {
+        snprintf(out, 40, "-%lld.%lld", integral_part, fractional_part);
+    } else {
+        snprintf(out, 40, "%lld.%lld", integral_part, fractional_part);
+    }
 }
 
 /// @brief Add two fxypty objects.

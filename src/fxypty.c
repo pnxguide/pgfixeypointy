@@ -5,7 +5,7 @@
 // clang-format on
 
 void *_fxypty_in(char *input, uint64_t scale);
-const char* _fxypty_out(char out[64], void *in);
+void _fxypty_out(char out[64], void *in);
 void *_fxypty_add(void *a, void *b);
 void *_fxypty_subtract(void *a, void *b);
 void *_fxypty_multiply(void *a, void *b);
@@ -120,8 +120,8 @@ Datum fxypty_out(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
 
     // Generate output
-    // char *result = (char *)palloc(sizeof(char) * 40);
-    const char *result = _fxypty_out(result, decimal);
+    char *result = (char *)palloc(sizeof(char) * 40);
+    _fxypty_out(result, decimal);
 
     PG_RETURN_CSTRING(result);
 }
