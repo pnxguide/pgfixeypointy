@@ -44,7 +44,8 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
     wrapped_decimal->scale = (libfixeypointy::Decimal::ScaleType)scale;
     try {
         libfixeypointy::Decimal tmp(std::string(input), wrapped_decimal->scale);
-        std::memcpy(wrapped_decimal->bytes, &tmp, sizeof(libfixeypointy::Decimal));
+        std::memcpy(wrapped_decimal->bytes, &tmp,
+                    sizeof(libfixeypointy::Decimal));
     } catch (std::runtime_error e) {
         return NULL;
     }
@@ -67,10 +68,19 @@ extern "C" void _fxypty_out(char out[40], void *in) {
     __int128_t integral_part = abs_value / decimal->scale;
     __int128_t fractional_part = abs_value % decimal->scale;
 
-    if (is_negative) {
-        snprintf(out, 40, "-%lld.%lld", integral_part, fractional_part);
+    bool is_fractional_zero = fractional_part == 0;
+    if (is_fractional_zero) {
+        if (is_negative) {
+            snprintf(out, 40, "-%lld", integral_part);
+        } else {
+            snprintf(out, 40, "%lld", integral_part);
+        }
     } else {
-        snprintf(out, 40, "%lld.%lld", integral_part, fractional_part);
+        if (is_negative) {
+            snprintf(out, 40, "-%lld.%lld", integral_part, fractional_part);
+        } else {
+            snprintf(out, 40, "%lld.%lld", integral_part, fractional_part);
+        }
     }
 }
 
