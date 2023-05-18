@@ -44,7 +44,8 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
     wrapped_decimal->scale = (libfixeypointy::Decimal::ScaleType)scale;
     try {
         libfixeypointy::Decimal tmp(std::string(input), wrapped_decimal->scale);
-        std::memcpy(wrapped_decimal->bytes, &tmp, sizeof(libfixeypointy::Decimal));
+        std::memcpy(wrapped_decimal->bytes, &tmp,
+                    sizeof(libfixeypointy::Decimal));
     } catch (std::runtime_error e) {
         return NULL;
     }
@@ -55,31 +56,81 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
 /// @brief Generate a string from the fxypty object.
 /// @param out The output string.
 /// @param in The input pointer to the fxypty object.
-extern "C" const char* _fxypty_out(char out[40], void *in) {
+extern "C" void _fxypty_out(char out[40], void *in) {
     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
-    // __int128_t native_value = _pack128(decimal);
+    __int128_t native_value = _pack128(decimal);
 
-    // int n_digits = 0;
+    // Get absolute value
+    bool is_negative = native_value < 0;
+    __int128_t abs_value = is_negative ? -native_value : native_value;
 
-    // __int128_t tmp = native_value;
-    // while (tmp > 0) {
-    //     tmp /= 10;
-    //     ++n_digits;
-    // }
+    // Power of ten
+    constexpr __int128_t[40] = {
+        1,
+        10,
+        100,
+        1000,
+        10000,
+        100000,
+        1000000,
+        10000000,
+        100000000,
+        1000000000,
+        10000000000,
 
-    // out[n_digits] = '\0';
+        100000000000,
+        1000000000000,
+        10000000000000,
+        100000000000000,
+        1000000000000000,
+        10000000000000000,
+        100000000000000000,
+        1000000000000000000,
+        10000000000000000000,
+        100000000000000000000,
 
-    // while (native_value > 0) {
-    //     int digit = native_value % 10;
-    //     out[n_digits--] = digit + '0';
-    //     native_value /= 10;
-    // }
+        1000000000000000000000,
+        10000000000000000000000,
+        100000000000000000000000,
+        1000000000000000000000000,
+        10000000000000000000000000,
+        100000000000000000000000000,
+        1000000000000000000000000000,
+        10000000000000000000000000000,
+        100000000000000000000000000000,
+        1000000000000000000000000000000,
 
-    // std::strncpy(out, tmp.ToString(decimal->scale).c_str(), 64);
-    // std::strcpy(out, tmp.ToString(decimal->scale).c_str());
-    // std::strcpy(out, "101231232.223");
-    libfixeypointy::Decimal tmp(_pack128(decimal));
-    return tmp.ToString(decimal->scale).c_str();
+        10000000000000000000000000000000,
+        100000000000000000000000000000000,
+        1000000000000000000000000000000000,
+        10000000000000000000000000000000000,
+        100000000000000000000000000000000000,
+        1000000000000000000000000000000000000,
+        10000000000000000000000000000000000000,
+        100000000000000000000000000000000000000,
+        1000000000000000000000000000000000000000,
+        10000000000000000000000000000000000000000
+    };
+
+    // Get fractional part
+    __int128_t ten_to_scale = POWER_OF_TEN[decimal->scale];
+    __int128_t integral_part = abs_value / ten_to_scale;
+    __int128_t fractional_part = abs_value % ten_to_scale;
+
+    bool is_fractional_zero = fractional_part == 0;
+    if (is_fractional_zero) {
+        if (is_negative) {
+            snprintf(out, 40, "-%lld", integral_part);
+        } else {
+            snprintf(out, 40, "%lld", integral_part);
+        }
+    } else {
+        if (is_negative) {
+            snprintf(out, 40, "-%lld.%lld", integral_part, fractional_part);
+        } else {
+            snprintf(out, 40, "%lld.%lld", integral_part, fractional_part);
+        }
+    }
 }
 
 /// @brief Add two fxypty objects.
