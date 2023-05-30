@@ -2,9 +2,20 @@ DROP EXTENSION IF EXISTS pgfixeypointy CASCADE;
 
 CREATE EXTENSION pgfixeypointy;
 
-SELECT '10.12345678901234567890'::fxypty(32,12) + '245.689'::fxypty(32,12);
-
 SELECT '10.12'::fxypty(10,5);
+
+SELECT '0.12'::fxypty(10,5);
+SELECT '-0.12'::fxypty(10,5);
+SELECT '10'::fxypty(10,5);
+SELECT '-10'::fxypty(10,5);
+SELECT '0.00032'::fxypty(10,5);
+
+SELECT '0.12'::NUMERIC(10,5);
+SELECT '-0.12'::NUMERIC(10,5);
+SELECT '10'::NUMERIC(10,5);
+SELECT '-10'::NUMERIC(10,5);
+
+SELECT '10.12345678901234567890'::fxypty(32,12) + '245.689'::fxypty(32,12);
 
 SELECT '10.12'::fxypty(10,2) - '245.689'::fxypty(10,2);
 

@@ -1,0 +1,49 @@
+EXPLAIN ANALYZE SELECT * FROM test_fxypty;
+EXPLAIN ANALYZE SELECT * FROM test_numeric;
+EXPLAIN ANALYZE SELECT * FROM test_double;
+EXPLAIN ANALYZE SELECT x + y FROM test_fxypty;
+EXPLAIN ANALYZE SELECT x + y FROM test_numeric;
+EXPLAIN ANALYZE SELECT x + y FROM test_double;
+
+
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on test_fxypty  (cost=0.00..193458.06 rows=10000006 width=48) (actual time=0.007..569.397 rows=10000000 loops=1)
+ Planning Time: 0.029 ms
+ Execution Time: 798.977 ms
+(3 rows)
+
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on test_numeric  (cost=0.00..171673.02 rows=9999902 width=24) (actual time=0.007..540.227 rows=10000000 loops=1)
+ Planning Time: 0.029 ms
+ Execution Time: 769.127 ms
+(3 rows)
+
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on test_double  (cost=0.00..154056.75 rows=10000175 width=16) (actual time=0.007..513.856 rows=10000000 loops=1)
+ Planning Time: 0.030 ms
+ Execution Time: 742.869 ms
+(3 rows)
+
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on test_fxypty  (cost=0.00..218458.08 rows=10000006 width=24) (actual time=0.010..1028.677 rows=10000000 loops=1)
+ Planning Time: 0.029 ms
+ Execution Time: 1260.075 ms
+(3 rows)
+
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on test_numeric  (cost=0.00..196672.78 rows=9999902 width=32) (actual time=0.012..2391.362 rows=10000000 loops=1)
+ Planning Time: 0.031 ms
+ Execution Time: 2622.418 ms
+(3 rows)
+
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on test_double  (cost=0.00..179057.19 rows=10000175 width=8) (actual time=0.010..704.592 rows=10000000 loops=1)
+ Planning Time: 0.030 ms
+ Execution Time: 934.008 ms
+(3 rows)

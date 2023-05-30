@@ -66,6 +66,7 @@ extern "C" void _fxypty_out(char out[40], void *in) {
     __int128_t abs_value = is_negative ? -native_value : native_value;
 
     // Power of ten
+    // suffix _128 is for removing compiler warnings
     constexpr __int128_t POWER_OF_TEN[38] = {
         1_128,
         10_128,
@@ -114,19 +115,25 @@ extern "C" void _fxypty_out(char out[40], void *in) {
     bool is_fractional_zero = fractional_part == 0;
     if (is_fractional_zero) {
         if (is_negative) {
-            snprintf(out, 40, "-%lld.%0*d", (long long int)integral_part, decimal->scale, 0);
+            snprintf(out, 40, "-%lld.%0*d", (long long int)integral_part,
+                     decimal->scale, 0);
         } else {
-            snprintf(out, 40, "%lld.%0*d", (long long int)integral_part, decimal->scale, 0);
+            snprintf(out, 40, "%lld.%0*d", (long long int)integral_part,
+                     decimal->scale, 0);
         }
     } else {
         if (is_negative) {
-            snprintf(out, 40, "-%lld.%lld", (long long int)integral_part,
-                     (long long int)fractional_part);
+            snprintf(out, 40, "-%lld.%0*lld", (long long int)integral_part,
+                     decimal->scale, (long long int)fractional_part);
         } else {
-            snprintf(out, 40, "%lld.%lld", (long long int)integral_part,
-                     (long long int)fractional_part);
+            snprintf(out, 40, "%lld.%0*lld", (long long int)integral_part,
+                     decimal->scale, (long long int)fractional_part);
         }
     }
+
+    // FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
+    // libfixeypointy::Decimal tmp(_pack128(decimal));
+    // std::strncpy(out, tmp.ToString(decimal->scale).c_str(), 40);
 }
 
 /// @brief Add two fxypty objects.
