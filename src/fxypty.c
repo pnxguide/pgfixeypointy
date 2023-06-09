@@ -120,7 +120,7 @@ Datum fxypty_out(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
 
     // Generate output
-    char *result = (char *)palloc(sizeof(char) * 40);
+    char *result = (char *)palloc0(sizeof(char) * 64);
     _fxypty_out(result, decimal);
 
     PG_RETURN_CSTRING(result);
