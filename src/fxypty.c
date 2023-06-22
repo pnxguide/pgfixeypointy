@@ -5,7 +5,7 @@
 // clang-format on
 
 void *_fxypty_in(char *input, uint64_t scale);
-void _fxypty_out(char out[64], void *in);
+void *_fxypty_out(char out[64], void *in);
 void *_fxypty_add(void *a, void *b);
 void *_fxypty_subtract(void *a, void *b);
 void *_fxypty_multiply(void *a, void *b);
@@ -51,14 +51,14 @@ PG_FUNCTION_INFO_V1(fxypty_larger);
 Datum fxypty(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
     int32 typmod = PG_GETARG_INT32(1);
-    Datum result = NULL;
+    Datum result = (Datum)NULL;
 
     if (typmod != -1) {
         result = DirectFunctionCall1(fxypty_out, (uint64)decimal);
         result = DirectFunctionCall3(fxypty_in, result, 0, typmod);
     }
 
-    if (result == NULL) {
+    if (result == (Datum)NULL) {
         ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
                         errmsg("Wrong result is generated.")));
     }
@@ -116,11 +116,19 @@ Datum fxypty_in(PG_FUNCTION_ARGS) {
 /// @brief Generate a string from the fxypty object.
 /// @param [fxypty] A pointer to the fxypty object.
 /// @return A string generated from the fxypty object.
+// Datum fxypty_out(PG_FUNCTION_ARGS) {
+//     void *decimal = (void *)PG_GETARG_POINTER(0);
+
+//     char *result = (char *)palloc0(sizeof(char) * 64);
+//     _fxypty_out(result, decimal);
+
+//     PG_RETURN_CSTRING(result);
+// }
+
 Datum fxypty_out(PG_FUNCTION_ARGS) {
     void *decimal = (void *)PG_GETARG_POINTER(0);
 
-    // Generate output
-    char *result = (char *)palloc0(sizeof(char) * 64);
+    char *result = (char *)palloc0(sizeof(char) * 42);
     _fxypty_out(result, decimal);
 
     PG_RETURN_CSTRING(result);
