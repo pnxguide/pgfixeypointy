@@ -346,7 +346,7 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
 // #endif
 // }
 
-#define TYPE 5
+#define TYPE 0
 
 /// @brief Generate a string from the fxypty object.
 /// @param out The output string.
@@ -650,10 +650,11 @@ extern "C" void _fxypty_out(char out[42], void *in) {
     // Case 2 - hi != 0; process lo first (18 digits)
     else {
         // process the fractional part
-        const int lo_scale = 18;
+        uint32_t lo_scale = 18;
 
         // Case 2A - decimal->scale > lo_scale; use all lo then switch to hi
         if (decimal->scale > lo_scale) {
+            // deplete lo
             int fractional_digit = lo_scale;
             while (fractional_digit > 0) {
                 tmp[--cur_digit] = (lo % 10) + '0';
@@ -661,51 +662,64 @@ extern "C" void _fxypty_out(char out[42], void *in) {
                 fractional_digit--;
             }
 
+            // deplete hi until decimal->scale is gone
             fractional_digit = decimal->scale - lo_scale;
             while (fractional_digit > 0) {
                 tmp[--cur_digit] = (hi % 10) + '0';
                 hi /= 10;
                 fractional_digit--;
             }
+
+            // if there is no integral part
+            if (hi == 0) {
+                if (is_negative) {
+                    out[0] = '-';
+                    out[1] = '0';
+                    out[2] = '.';
+                    std::memcpy(&(out[3]), &(tmp[cur_digit]), 42 - cur_digit);
+                } else {
+                    out[0] = '0';
+                    out[1] = '.';
+                    std::memcpy(&(out[2]), &(tmp[cur_digit]), 42 - cur_digit);
+                }
+                return;
+            }
+
+            tmp[--cur_digit] = '.';
         }
         
         // Case 2B - decimal->scale <= lo_scale; use all decimal->scale and stay lo
         else {
-            int fractional_digit = lo_scale;
+            int fractional_digit = decimal->scale;
             while (fractional_digit > 0) {
                 tmp[--cur_digit] = (lo % 10) + '0';
                 lo /= 10;
                 fractional_digit--;
             }
-        }
-    }
 
-    // if there is no integral part
-    if (abs_value == 0) {
+            // dot
+            tmp[--cur_digit] = '.';
+
+            // deplete lo
+            lo_scale = 18 - decimal->scale;
+            while (lo_scale > 0) {
+                tmp[--cur_digit] = (lo % 10) + '0';
+                lo /= 10;
+                lo_scale--;
+            }
+        }
+
+        while (hi > 0) {
+            tmp[--cur_digit] = (hi % 10) + '0';
+            hi /= 10;
+        }
+
         if (is_negative) {
             out[0] = '-';
-            out[1] = '0';
-            out[2] = '.';
-            std::memcpy(&(out[3]), &(tmp[cur_digit]), 42 - cur_digit);
+            std::memcpy(&(out[1]), &(tmp[cur_digit]), 42 - cur_digit);
         } else {
-            out[0] = '0';
-            out[1] = '.';
-            std::memcpy(&(out[2]), &(tmp[cur_digit]), 42 - cur_digit);
+            std::memcpy(&(out[0]), &(tmp[cur_digit]), 42 - cur_digit);
         }
-        return;
-    }
-
-    tmp[--cur_digit] = '.';
-    while (abs_value > 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-    }
-
-    if (is_negative) {
-        out[0] = '-';
-        std::memcpy(&(out[1]), &(tmp[cur_digit]), 42 - cur_digit);
-    } else {
-        std::memcpy(&(out[0]), &(tmp[cur_digit]), 42 - cur_digit);
     }
 #endif
 #if TYPE == 9

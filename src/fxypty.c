@@ -17,7 +17,9 @@ PG_MODULE_MAGIC;
 #endif
 
 PG_FUNCTION_INFO_V1(fxypty_in);
+PG_FUNCTION_INFO_V1(fxypty_in_casted);
 PG_FUNCTION_INFO_V1(fxypty_out);
+PG_FUNCTION_INFO_V1(fxypty_out_casted);
 PG_FUNCTION_INFO_V1(fxypty_typmod_in);
 PG_FUNCTION_INFO_V1(fxypty_typmod_out);
 
@@ -53,9 +55,11 @@ Datum fxypty(PG_FUNCTION_ARGS) {
     int32 typmod = PG_GETARG_INT32(1);
     Datum result = (Datum)NULL;
 
+    printf("[fxypty] %d\n", typmod);
+
     if (typmod != -1) {
-        result = DirectFunctionCall1(fxypty_out, (uint64)decimal);
-        result = DirectFunctionCall3(fxypty_in, result, 0, typmod);
+        result = DirectFunctionCall1(fxypty_out_casted, (uint64)decimal);
+        result = DirectFunctionCall3(fxypty_in_casted, result, 0, typmod);
     }
 
     if (result == (Datum)NULL) {
@@ -75,12 +79,35 @@ Datum fxypty(PG_FUNCTION_ARGS) {
 /// @param [string, Oid, int32] where the string is the string decimal and int32
 /// is the type modifier.
 /// @return The pointer to the fxypty object.
+// Only store string
 Datum fxypty_in(PG_FUNCTION_ARGS) {
     char *str = PG_GETARG_CSTRING(0);
-    char input_buffer[64];
+    char input_buffer[42];
+    char *result;
+
+    // Check input syntax
+    if (sscanf(str, "%s", input_buffer) != 1) {
+        ereport(ERROR,
+                (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                 errmsg("invalid syntax for type %s: \"%s\"", "fxypty", str)));
+    }
+
+    result = (char *)palloc0(sizeof(char) * 42);
+    memcpy(result, input_buffer, 42);
+
+    PG_RETURN_POINTER(result);
+}
+
+/// @brief Parse an input string and generate a fxypty object based on the
+/// string.
+/// @param [string, Oid, int32] where the string is the string decimal and int32
+/// is the type modifier.
+/// @return The pointer to the fxypty object.
+Datum fxypty_in_casted(PG_FUNCTION_ARGS) {
+    char *str = PG_GETARG_CSTRING(0);
+    char input_buffer[42];
     void *result;
 
-    // If the typmod check starts here
     int32 number_of_digits;
     int32 number_of_fractional_digits;
     int32 typmod;
@@ -92,6 +119,8 @@ Datum fxypty_in(PG_FUNCTION_ARGS) {
         number_of_digits = (typmod >> 16) & 0xffff;
         number_of_fractional_digits = typmod & 0xffff;
     }
+
+    printf("[fxypty_in_casted] %d %d\n", number_of_digits, number_of_fractional_digits);
 
     // FIXME: Check whether the number_of_digits matches or not
     (void)number_of_digits;
@@ -109,6 +138,9 @@ Datum fxypty_in(PG_FUNCTION_ARGS) {
         ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
                         errmsg("The operation returns runtime errors.")));
     }
+
+    // Free input string
+    pfree(str);
 
     PG_RETURN_POINTER(result);
 }
@@ -131,7 +163,14 @@ Datum fxypty_out(PG_FUNCTION_ARGS) {
     char *result = (char *)palloc0(sizeof(char) * 42);
     _fxypty_out(result, decimal);
 
+    printf("[fxypty_out] %s\n", result);
+
     PG_RETURN_CSTRING(result);
+}
+
+Datum fxypty_out_casted(PG_FUNCTION_ARGS) {
+    void *decimal = (void *)PG_GETARG_POINTER(0);
+    PG_RETURN_CSTRING(decimal);
 }
 
 /// @brief Parse and validate a type modifier and generate an int32 to represent
