@@ -264,17 +264,16 @@ extern "C" void _fxypty_out(char out[42], void *in) {
 /// @return The pointer to the new fxypty object containing the sum of both the
 /// fxypty objects.
 extern "C" void *_fxypty_add(void *a, void *b) {
-    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    result->scale = ((FxyPty_Decimal *)a)->scale;
+    FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
+    FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
 
-    libfixeypointy::Decimal *fxypty_a = (libfixeypointy::Decimal *)((FxyPty_Decimal *)a)->bytes;
-    libfixeypointy::Decimal *fxypty_b = (libfixeypointy::Decimal *)((FxyPty_Decimal *)b)->bytes;
+    FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
+    result->scale = wrapped_a->scale;
 
     try {
-        libfixeypointy::Decimal *fxypty_result = (libfixeypointy::Decimal *)(result->bytes);
-        *fxypty_result = *fxypty_a;
-        fxypty_result->Add(*fxypty_b);
-        std::memcpy(result->bytes, &fxypty_result, sizeof(libfixeypointy::Decimal));
+        libfixeypointy::Decimal tmp(_pack128(wrapped_a));
+        tmp.Add(libfixeypointy::Decimal(_pack128(wrapped_b)));
+        std::memcpy(result->bytes, &tmp, sizeof(libfixeypointy::Decimal));
     } catch (std::runtime_error e) {
         return NULL;
     }
