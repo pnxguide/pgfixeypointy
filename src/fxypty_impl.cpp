@@ -68,286 +68,7 @@ extern "C" void *_fxypty_in(char *input, uint64_t scale) {
     return wrapped_decimal;
 }
 
-// #define TYPE 5
-
-// /// @brief Generate a string from the fxypty object.
-// /// @param out The output string.
-// /// @param in The input pointer to the fxypty object.
-// extern "C" void _fxypty_out(char out[64], void *in) {
-//     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
-//     __int128_t native_value = _pack128(decimal);
-
-// #if TYPE == 0
-//     std::string in_string =
-//         libfixeypointy::Decimal(native_value).ToString(decimal->scale);
-//     std::memcpy(out, in_string.c_str(), 64);
-// #endif
-// #if TYPE == 1
-//     // Get absolute value
-//     bool is_negative = native_value < 0;
-//     __int128_t abs_value = is_negative ? -native_value : native_value;
-
-//     // temporary buffer
-//     char tmp[64];
-//     tmp[63] = '\0';
-
-//     // digit pointer
-//     int cur_digit = 63;
-//     int fractional_digit = decimal->scale;
-
-//     // fractional part
-//     while (fractional_digit > 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//         abs_value /= 10;
-//         fractional_digit--;
-//     }
-
-//     // if there is no integral part
-//     if (abs_value == 0) {
-//         if (is_negative) {
-//             out[0] = '-';
-//             out[1] = '0';
-//             out[2] = '.';
-//             std::memcpy(&(out[3]), &(tmp[cur_digit]), 64 - cur_digit);
-//         } else {
-//             out[0] = '0';
-//             out[1] = '.';
-//             std::memcpy(&(out[2]), &(tmp[cur_digit]), 64 - cur_digit);
-//         }
-//         return;
-//     }
-
-//     tmp[--cur_digit] = '.';
-//     while (abs_value > 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//         abs_value /= 10;
-//     }
-
-//     if (is_negative) {
-//         out[0] = '-';
-//         std::memcpy(&(out[1]), &(tmp[cur_digit]), 64 - cur_digit);
-//     } else {
-//         std::memcpy(&(out[0]), &(tmp[cur_digit]), 64 - cur_digit);
-//     }
-// #endif
-// #if TYPE == 2
-//     // Get absolute value
-//     bool is_negative = native_value < 0;
-//     __int128_t abs_value = is_negative ? -native_value : native_value;
-
-//     // temporary buffer
-//     char tmp[64];
-//     tmp[63] = '\0';
-
-//     // digit pointer
-//     int cur_digit = 63;
-//     int fractional_digit = decimal->scale;
-
-//     // make # of fractional digits even
-//     if (fractional_digit % 2 != 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//         abs_value /= 10;
-//         fractional_digit--;
-//     }
-
-//     // fractional part
-//     while (fractional_digit > 0) {
-//         cur_digit -= 2;
-//         std::memcpy(&(tmp[cur_digit]), TWO_DIGITS[(abs_value % 100)], 2);
-//         abs_value /= 100;
-//         fractional_digit -= 2;
-//     }
-
-//     // if there is no integral part
-//     if (abs_value == 0) {
-//         if (is_negative) {
-//             out[0] = '-';
-//             out[1] = '0';
-//             out[2] = '.';
-//             std::memcpy(&(out[3]), &(tmp[cur_digit]), 64 - cur_digit);
-//         } else {
-//             out[0] = '0';
-//             out[1] = '.';
-//             std::memcpy(&(out[2]), &(tmp[cur_digit]), 64 - cur_digit);
-//         }
-//         return;
-//     }
-
-//     tmp[--cur_digit] = '.';
-//     while (abs_value > 10) {
-//         cur_digit -= 2;
-//         std::memcpy(&(tmp[cur_digit]), TWO_DIGITS[(abs_value % 100)], 2);
-//         abs_value /= 100;
-//     }
-
-//     if (abs_value > 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//     }
-
-//     if (is_negative) {
-//         out[0] = '-';
-//         std::memcpy(&(out[1]), &(tmp[cur_digit]), 64 - cur_digit);
-//     } else {
-//         std::memcpy(&(out[0]), &(tmp[cur_digit]), 64 - cur_digit);
-//     }
-// #endif
-// #if TYPE == 3
-//     // Get absolute value
-//     bool is_negative = native_value < 0;
-//     __int128_t abs_value = is_negative ? -native_value : native_value;
-
-//     // temporary buffer
-//     char tmp[64];
-//     tmp[63] = '\0';
-
-//     // digit pointer
-//     int cur_digit = 63;
-//     int fractional_digit = decimal->scale;
-
-//     // make # of fractional digits even
-//     while (fractional_digit % 3 != 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//         abs_value /= 10;
-//         fractional_digit--;
-//     }
-
-//     // fractional part
-//     while (fractional_digit > 0) {
-//         cur_digit -= 3;
-//         std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(abs_value % 1000)], 3);
-//         abs_value /= 1000;
-//         fractional_digit -= 3;
-//     }
-
-//     // if there is no integral part
-//     if (abs_value == 0) {
-//         if (is_negative) {
-//             out[0] = '-';
-//             out[1] = '0';
-//             out[2] = '.';
-//             std::memcpy(&(out[3]), &(tmp[cur_digit]), 64 - cur_digit);
-//         } else {
-//             out[0] = '0';
-//             out[1] = '.';
-//             std::memcpy(&(out[2]), &(tmp[cur_digit]), 64 - cur_digit);
-//         }
-//         return;
-//     }
-
-//     tmp[--cur_digit] = '.';
-//     while (abs_value > 1000) {
-//         cur_digit -= 3;
-//         std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(abs_value % 1000)], 3);
-//         abs_value /= 1000;
-//     }
-
-//     while (abs_value > 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//         abs_value /= 10;
-//     }
-
-//     if (is_negative) {
-//         out[0] = '-';
-//         std::memcpy(&(out[1]), &(tmp[cur_digit]), 64 - cur_digit);
-//     } else {
-//         std::memcpy(&(out[0]), &(tmp[cur_digit]), 64 - cur_digit);
-//     }
-// #endif
-// #if TYPE == 4
-//     // Get absolute value
-//     bool is_negative = native_value < 0;
-//     __int128_t abs_value = is_negative ? -native_value : native_value;
-
-//     // temporary buffer
-//     char tmp[64];
-//     tmp[63] = '\0';
-
-//     // digit pointer
-//     int cur_digit = 63;
-//     int fractional_digit = decimal->scale;
-
-//     // make # of fractional digits even
-//     while (fractional_digit % 4 != 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//         abs_value /= 10;
-//         fractional_digit--;
-//     }
-
-//     // fractional part
-//     while (fractional_digit > 0) {
-//         cur_digit -= 4;
-//         std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(abs_value % 10000)], 4);
-//         abs_value /= 10000;
-//         fractional_digit -= 4;
-//     }
-
-//     // if there is no integral part
-//     if (abs_value == 0) {
-//         if (is_negative) {
-//             out[0] = '-';
-//             out[1] = '0';
-//             out[2] = '.';
-//             std::memcpy(&(out[3]), &(tmp[cur_digit]), 64 - cur_digit);
-//         } else {
-//             out[0] = '0';
-//             out[1] = '.';
-//             std::memcpy(&(out[2]), &(tmp[cur_digit]), 64 - cur_digit);
-//         }
-//         return;
-//     }
-
-//     tmp[--cur_digit] = '.';
-//     while (abs_value > 10000) {
-//         cur_digit -= 4;
-//         std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(abs_value % 10000)], 4);
-//         abs_value /= 10000;
-//     }
-
-//     while (abs_value > 0) {
-//         tmp[--cur_digit] = (abs_value % 10) + '0';
-//         abs_value /= 10;
-//     }
-
-//     if (is_negative) {
-//         out[0] = '-';
-//         std::memcpy(&(out[1]), &(tmp[cur_digit]), 64 - cur_digit);
-//     } else {
-//         std::memcpy(&(out[0]), &(tmp[cur_digit]), 64 - cur_digit);
-//     }
-// #endif
-// #if TYPE == 9
-//     // Get absolute value
-//     bool is_negative = native_value < 0;
-//     __int128_t abs_value = is_negative ? -native_value : native_value;
-
-//     // Get fractional part
-//     __int128_t ten_to_scale = POWER_OF_TEN[decimal->scale];
-//     __int128_t integral_part = abs_value / ten_to_scale;
-//     __int128_t fractional_part = abs_value % ten_to_scale;
-
-//     bool is_fractional_zero = fractional_part == 0;
-//     if (is_fractional_zero) {
-//         if (is_negative) {
-//             snprintf(out, 64, "-%lld.%0*d", (long long int)integral_part,
-//                      decimal->scale, 0);
-//         } else {
-//             snprintf(out, 64, "%lld.%0*d", (long long int)integral_part,
-//                      decimal->scale, 0);
-//         }
-//     } else {
-//         if (is_negative) {
-//             snprintf(out, 64, "-%lld.%0*lld", (long long int)integral_part,
-//                      decimal->scale, (long long int)fractional_part);
-//         } else {
-//             snprintf(out, 64, "%lld.%0*lld", (long long int)integral_part,
-//                      decimal->scale, (long long int)fractional_part);
-//         }
-//     }
-// #endif
-// }
-
-#define TYPE 0
-
+// TODO: Flame graph
 /// @brief Generate a string from the fxypty object.
 /// @param out The output string.
 /// @param in The input pointer to the fxypty object.
@@ -355,245 +76,6 @@ extern "C" void _fxypty_out(char out[42], void *in) {
     FxyPty_Decimal *decimal = (FxyPty_Decimal *)in;
     __int128_t native_value = _pack128(decimal);
 
-#if TYPE == 0
-    std::string in_string =
-        libfixeypointy::Decimal(native_value).ToString(decimal->scale);
-    std::memcpy(out, in_string.c_str(), 42);
-#endif
-#if TYPE == 1
-    // Get absolute value
-    bool is_negative = native_value < 0;
-    __int128_t abs_value = is_negative ? -native_value : native_value;
-
-    // temporary buffer
-    char tmp[42];
-    tmp[41] = '\0';
-
-    // digit pointer
-    int cur_digit = 41;
-    int fractional_digit = decimal->scale;
-
-    // fractional part
-    while (fractional_digit > 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-        fractional_digit--;
-    }
-
-    // if there is no integral part
-    if (abs_value == 0) {
-        if (is_negative) {
-            out[0] = '-';
-            out[1] = '0';
-            out[2] = '.';
-            std::memcpy(&(out[3]), &(tmp[cur_digit]), 42 - cur_digit);
-        } else {
-            out[0] = '0';
-            out[1] = '.';
-            std::memcpy(&(out[2]), &(tmp[cur_digit]), 42 - cur_digit);
-        }
-        return;
-    }
-
-    tmp[--cur_digit] = '.';
-    while (abs_value > 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-    }
-
-    if (is_negative) {
-        out[0] = '-';
-        std::memcpy(&(out[1]), &(tmp[cur_digit]), 42 - cur_digit);
-    } else {
-        std::memcpy(&(out[0]), &(tmp[cur_digit]), 42 - cur_digit);
-    }
-#endif
-#if TYPE == 2
-    // Get absolute value
-    bool is_negative = native_value < 0;
-    __int128_t abs_value = is_negative ? -native_value : native_value;
-
-    // temporary buffer
-    char tmp[42];
-    tmp[41] = '\0';
-
-    // digit pointer
-    int cur_digit = 41;
-    int fractional_digit = decimal->scale;
-
-    // make # of fractional digits even
-    if (fractional_digit % 2 != 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-        fractional_digit--;
-    }
-
-    // fractional part
-    while (fractional_digit > 0) {
-        cur_digit -= 2;
-        std::memcpy(&(tmp[cur_digit]), TWO_DIGITS[(abs_value % 100)], 2);
-        abs_value /= 100;
-        fractional_digit -= 2;
-    }
-
-    // if there is no integral part
-    if (abs_value == 0) {
-        if (is_negative) {
-            out[0] = '-';
-            out[1] = '0';
-            out[2] = '.';
-            std::memcpy(&(out[3]), &(tmp[cur_digit]), 42 - cur_digit);
-        } else {
-            out[0] = '0';
-            out[1] = '.';
-            std::memcpy(&(out[2]), &(tmp[cur_digit]), 42 - cur_digit);
-        }
-        return;
-    }
-
-    tmp[--cur_digit] = '.';
-    while (abs_value > 10) {
-        cur_digit -= 2;
-        std::memcpy(&(tmp[cur_digit]), TWO_DIGITS[(abs_value % 100)], 2);
-        abs_value /= 100;
-    }
-
-    if (abs_value > 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-    }
-
-    if (is_negative) {
-        out[0] = '-';
-        std::memcpy(&(out[1]), &(tmp[cur_digit]), 42 - cur_digit);
-    } else {
-        std::memcpy(&(out[0]), &(tmp[cur_digit]), 42 - cur_digit);
-    }
-#endif
-#if TYPE == 3
-    // Get absolute value
-    bool is_negative = native_value < 0;
-    __int128_t abs_value = is_negative ? -native_value : native_value;
-
-    // temporary buffer
-    char tmp[42];
-    tmp[41] = '\0';
-
-    // digit pointer
-    int cur_digit = 41;
-    int fractional_digit = decimal->scale;
-
-    // make # of fractional digits even
-    while (fractional_digit % 3 != 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-        fractional_digit--;
-    }
-
-    // fractional part
-    while (fractional_digit > 0) {
-        cur_digit -= 3;
-        std::memcpy(&(tmp[cur_digit]), THREE_DIGITS[(abs_value % 1000)], 3);
-        abs_value /= 1000;
-        fractional_digit -= 3;
-    }
-
-    // if there is no integral part
-    if (abs_value == 0) {
-        if (is_negative) {
-            out[0] = '-';
-            out[1] = '0';
-            out[2] = '.';
-            std::memcpy(&(out[3]), &(tmp[cur_digit]), 42 - cur_digit);
-        } else {
-            out[0] = '0';
-            out[1] = '.';
-            std::memcpy(&(out[2]), &(tmp[cur_digit]), 42 - cur_digit);
-        }
-        return;
-    }
-
-    tmp[--cur_digit] = '.';
-    while (abs_value > 1000) {
-        cur_digit -= 3;
-        std::memcpy(&(tmp[cur_digit]), THREE_DIGITS[(abs_value % 1000)], 3);
-        abs_value /= 1000;
-    }
-
-    while (abs_value > 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-    }
-
-    if (is_negative) {
-        out[0] = '-';
-        std::memcpy(&(out[1]), &(tmp[cur_digit]), 42 - cur_digit);
-    } else {
-        std::memcpy(&(out[0]), &(tmp[cur_digit]), 42 - cur_digit);
-    }
-#endif
-#if TYPE == 4
-    // Get absolute value
-    bool is_negative = native_value < 0;
-    __int128_t abs_value = is_negative ? -native_value : native_value;
-
-    // temporary buffer
-    char tmp[42];
-    tmp[41] = '\0';
-
-    // digit pointer
-    int cur_digit = 41;
-    int fractional_digit = decimal->scale;
-
-    // make # of fractional digits even
-    while (fractional_digit % 4 != 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-        fractional_digit--;
-    }
-
-    // fractional part
-    while (fractional_digit > 0) {
-        cur_digit -= 4;
-        std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(abs_value % 10000)], 4);
-        abs_value /= 10000;
-        fractional_digit -= 4;
-    }
-
-    // if there is no integral part
-    if (abs_value == 0) {
-        if (is_negative) {
-            out[0] = '-';
-            out[1] = '0';
-            out[2] = '.';
-            std::memcpy(&(out[3]), &(tmp[cur_digit]), 42 - cur_digit);
-        } else {
-            out[0] = '0';
-            out[1] = '.';
-            std::memcpy(&(out[2]), &(tmp[cur_digit]), 42 - cur_digit);
-        }
-        return;
-    }
-
-    tmp[--cur_digit] = '.';
-    while (abs_value > 10000) {
-        cur_digit -= 4;
-        std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(abs_value % 10000)], 4);
-        abs_value /= 10000;
-    }
-
-    while (abs_value > 0) {
-        tmp[--cur_digit] = (abs_value % 10) + '0';
-        abs_value /= 10;
-    }
-
-    if (is_negative) {
-        out[0] = '-';
-        std::memcpy(&(out[1]), &(tmp[cur_digit]), 42 - cur_digit);
-    } else {
-        std::memcpy(&(out[0]), &(tmp[cur_digit]), 42 - cur_digit);
-    }
-#endif
-#if TYPE == 5
     // Get absolute value
     bool is_negative = native_value < 0;
     __int128_t abs_value = is_negative ? -native_value : native_value;
@@ -613,10 +95,18 @@ extern "C" void _fxypty_out(char out[42], void *in) {
     if (hi == 0) {
         // deplete lo
         int fractional_digit = decimal->scale;
-        while (fractional_digit > 0) {
+
+        while (fractional_digit % 4 != 0) {
             tmp[--cur_digit] = (lo % 10) + '0';
             lo /= 10;
             fractional_digit--;
+        }
+
+        while (fractional_digit > 0) {
+            cur_digit -= 4;
+            std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(lo % 10000)], 4);
+            lo /= 10000;
+            fractional_digit -= 4;
         }
 
         // if there is no integral part
@@ -635,6 +125,13 @@ extern "C" void _fxypty_out(char out[42], void *in) {
         }
 
         tmp[--cur_digit] = '.';
+
+        while (lo > 10000) {
+            cur_digit -= 4;
+            std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(lo % 10000)], 4);
+            lo /= 10000;
+        }
+
         while (lo > 0) {
             tmp[--cur_digit] = (lo % 10) + '0';
             lo /= 10;
@@ -656,18 +153,34 @@ extern "C" void _fxypty_out(char out[42], void *in) {
         if (decimal->scale > lo_scale) {
             // deplete lo
             int fractional_digit = lo_scale;
-            while (fractional_digit > 0) {
+
+            while (fractional_digit % 4 != 0) {
                 tmp[--cur_digit] = (lo % 10) + '0';
                 lo /= 10;
                 fractional_digit--;
             }
 
+            while (fractional_digit > 0) {
+                cur_digit -= 4;
+                std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(lo % 10000)], 4);
+                lo /= 10000;
+                fractional_digit -= 4;
+            }
+
             // deplete hi until decimal->scale is gone
             fractional_digit = decimal->scale - lo_scale;
-            while (fractional_digit > 0) {
+
+            while (fractional_digit % 4 != 0) {
                 tmp[--cur_digit] = (hi % 10) + '0';
                 hi /= 10;
                 fractional_digit--;
+            }
+
+            while (fractional_digit > 0) {
+                cur_digit -= 4;
+                std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(hi % 10000)], 4);
+                hi /= 10000;
+                fractional_digit -= 4;
             }
 
             // if there is no integral part
@@ -691,10 +204,18 @@ extern "C" void _fxypty_out(char out[42], void *in) {
         // Case 2B - decimal->scale <= lo_scale; use all decimal->scale and stay lo
         else {
             int fractional_digit = decimal->scale;
-            while (fractional_digit > 0) {
+
+            while (fractional_digit % 4 != 0) {
                 tmp[--cur_digit] = (lo % 10) + '0';
                 lo /= 10;
                 fractional_digit--;
+            }
+
+            while (fractional_digit > 0) {
+                cur_digit -= 4;
+                std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(lo % 10000)], 4);
+                lo /= 10000;
+                fractional_digit -= 4;
             }
 
             // dot
@@ -702,11 +223,25 @@ extern "C" void _fxypty_out(char out[42], void *in) {
 
             // deplete lo
             lo_scale = 18 - decimal->scale;
-            while (lo_scale > 0) {
+
+            while (lo_scale % 4 != 0) {
                 tmp[--cur_digit] = (lo % 10) + '0';
                 lo /= 10;
                 lo_scale--;
             }
+
+            while (lo_scale > 0) {
+                cur_digit -= 4;
+                std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(lo % 10000)], 4);
+                lo /= 10000;
+                lo_scale -= 4;
+            }
+        }
+
+        while (hi > 10000) {
+            cur_digit -= 4;
+            std::memcpy(&(tmp[cur_digit]), FOUR_DIGITS[(hi % 10000)], 4);
+            hi /= 10000;
         }
 
         while (hi > 0) {
@@ -721,36 +256,6 @@ extern "C" void _fxypty_out(char out[42], void *in) {
             std::memcpy(&(out[0]), &(tmp[cur_digit]), 42 - cur_digit);
         }
     }
-#endif
-#if TYPE == 9
-    // Get absolute value
-    bool is_negative = native_value < 0;
-    __int128_t abs_value = is_negative ? -native_value : native_value;
-
-    // Get fractional part
-    __int128_t ten_to_scale = POWER_OF_TEN[decimal->scale];
-    __int128_t integral_part = abs_value / ten_to_scale;
-    __int128_t fractional_part = abs_value % ten_to_scale;
-
-    bool is_fractional_zero = fractional_part == 0;
-    if (is_fractional_zero) {
-        if (is_negative) {
-            snprintf(out, 42, "-%lld.%0*d", (long long int)integral_part,
-                     decimal->scale, 0);
-        } else {
-            snprintf(out, 42, "%lld.%0*d", (long long int)integral_part,
-                     decimal->scale, 0);
-        }
-    } else {
-        if (is_negative) {
-            snprintf(out, 42, "-%lld.%0*lld", (long long int)integral_part,
-                     decimal->scale, (long long int)fractional_part);
-        } else {
-            snprintf(out, 42, "%lld.%0*lld", (long long int)integral_part,
-                     decimal->scale, (long long int)fractional_part);
-        }
-    }
-#endif
 }
 
 /// @brief Add two fxypty objects.
@@ -759,16 +264,17 @@ extern "C" void _fxypty_out(char out[42], void *in) {
 /// @return The pointer to the new fxypty object containing the sum of both the
 /// fxypty objects.
 extern "C" void *_fxypty_add(void *a, void *b) {
-    FxyPty_Decimal *wrapped_a = (FxyPty_Decimal *)a;
-    FxyPty_Decimal *wrapped_b = (FxyPty_Decimal *)b;
-
     FxyPty_Decimal *result = (FxyPty_Decimal *)palloc(sizeof(FxyPty_Decimal));
-    result->scale = wrapped_a->scale;
+    result->scale = ((FxyPty_Decimal *)a)->scale;
+
+    libfixeypointy::Decimal *fxypty_a = (libfixeypointy::Decimal *)((FxyPty_Decimal *)a)->bytes;
+    libfixeypointy::Decimal *fxypty_b = (libfixeypointy::Decimal *)((FxyPty_Decimal *)b)->bytes;
 
     try {
-        libfixeypointy::Decimal tmp(_pack128(wrapped_a));
-        tmp.Add(libfixeypointy::Decimal(_pack128(wrapped_b)));
-        std::memcpy(result->bytes, &tmp, sizeof(libfixeypointy::Decimal));
+        libfixeypointy::Decimal *fxypty_result = (libfixeypointy::Decimal *)(result->bytes);
+        *fxypty_result = *fxypty_a;
+        fxypty_result->Add(*fxypty_b);
+        std::memcpy(result->bytes, &fxypty_result, sizeof(libfixeypointy::Decimal));
     } catch (std::runtime_error e) {
         return NULL;
     }
