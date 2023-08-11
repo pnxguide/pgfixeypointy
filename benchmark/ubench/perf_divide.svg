@@ -1,0 +1,2649 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="1014" onload="init(evt)" viewBox="0 0 1200 1014" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="1014.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="997" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="997" > </text>
+<g id="frames">
+<g >
+<title>node::Environment::RunTimers (28,866,352 samples, 0.02%)</title><rect x="42.5" y="837" width="0.3" height="15.0" fill="rgb(216,139,17)" rx="2" ry="2" />
+<text  x="45.52" y="847.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;1, libfixeypointy::Unsigned128BitHash, true&gt;::_M_cget (60,334,093 samples, 0.05%)</title><rect x="312.2" y="821" width="0.6" height="15.0" fill="rgb(244,223,24)" rx="2" ry="2" />
+<text  x="315.17" y="831.5" ></text>
+</g>
+<g >
+<title>iterate_dir (40,518,904 samples, 0.03%)</title><rect x="27.6" y="853" width="0.4" height="15.0" fill="rgb(218,112,2)" rx="2" ry="2" />
+<text  x="30.62" y="863.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::Decimal (60,523,700 samples, 0.05%)</title><rect x="341.7" y="837" width="0.6" height="15.0" fill="rgb(230,175,40)" rx="2" ry="2" />
+<text  x="344.72" y="847.5" ></text>
+</g>
+<g >
+<title>std::__uninitialized_copy_a&lt;__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;, libfixeypointy::Decimal*, libfixeypointy::Decimal&gt; (2,480,154,560 samples, 2.14%)</title><rect x="324.5" y="885" width="25.2" height="15.0" fill="rgb(244,133,15)" rx="2" ry="2" />
+<text  x="327.47" y="895.5" >s..</text>
+</g>
+<g >
+<title>cpu_stop_queue_work (89,805,096 samples, 0.08%)</title><rect x="46.5" y="709" width="0.9" height="15.0" fill="rgb(247,18,12)" rx="2" ry="2" />
+<text  x="49.48" y="719.5" ></text>
+</g>
+<g >
+<title>getname_flags.part.0 (698,905,038 samples, 0.60%)</title><rect x="20.5" y="789" width="7.1" height="15.0" fill="rgb(231,52,11)" rx="2" ry="2" />
+<text  x="23.48" y="799.5" ></text>
+</g>
+<g >
+<title>is_cpu_allowed (40,228,639 samples, 0.03%)</title><rect x="46.7" y="661" width="0.4" height="15.0" fill="rgb(232,95,19)" rx="2" ry="2" />
+<text  x="49.73" y="671.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="485" width="2.9" height="15.0" fill="rgb(253,87,6)" rx="2" ry="2" />
+<text  x="42.20" y="495.5" ></text>
+</g>
+<g >
+<title>Builtins_RunMicrotasks (11,626,072 samples, 0.01%)</title><rect x="42.1" y="629" width="0.1" height="15.0" fill="rgb(218,90,52)" rx="2" ry="2" />
+<text  x="45.11" y="639.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (1,210,444,623 samples, 1.04%)</title><rect x="446.9" y="901" width="12.3" height="15.0" fill="rgb(254,54,32)" rx="2" ry="2" />
+<text  x="449.90" y="911.5" ></text>
+</g>
+<g >
+<title>_Unwind_DeleteException (30,253,008 samples, 0.03%)</title><rect x="53.3" y="917" width="0.3" height="15.0" fill="rgb(209,189,21)" rx="2" ry="2" />
+<text  x="56.30" y="927.5" ></text>
+</g>
+<g >
+<title>Builtins_PromiseFulfillReactionJob (11,626,072 samples, 0.01%)</title><rect x="42.1" y="613" width="0.1" height="15.0" fill="rgb(216,143,52)" rx="2" ry="2" />
+<text  x="45.11" y="623.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (13,861,324 samples, 0.01%)</title><rect x="45.1" y="661" width="0.1" height="15.0" fill="rgb(234,98,15)" rx="2" ry="2" />
+<text  x="48.11" y="671.5" ></text>
+</g>
+<g >
+<title>_perf_event_enable (15,643,035 samples, 0.01%)</title><rect x="45.1" y="741" width="0.2" height="15.0" fill="rgb(205,228,2)" rx="2" ry="2" />
+<text  x="48.11" y="751.5" ></text>
+</g>
+<g >
+<title>_Unwind_RaiseException (362,764,175 samples, 0.31%)</title><rect x="533.3" y="869" width="3.7" height="15.0" fill="rgb(219,58,48)" rx="2" ry="2" />
+<text  x="536.35" y="879.5" ></text>
+</g>
+<g >
+<title>node::NodeMainInstance::Run (380,564,981 samples, 0.33%)</title><rect x="38.9" y="901" width="3.9" height="15.0" fill="rgb(233,4,46)" rx="2" ry="2" />
+<text  x="41.94" y="911.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::find (4,681,166,687 samples, 4.04%)</title><rect x="267.0" y="853" width="47.6" height="15.0" fill="rgb(249,196,1)" rx="2" ry="2" />
+<text  x="270.01" y="863.5" >std:..</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_bucket_index (60,557,175 samples, 0.05%)</title><rect x="266.4" y="853" width="0.6" height="15.0" fill="rgb(244,93,51)" rx="2" ry="2" />
+<text  x="269.39" y="863.5" ></text>
+</g>
+<g >
+<title>__schedule (30,202,709 samples, 0.03%)</title><rect x="1182.1" y="853" width="0.3" height="15.0" fill="rgb(249,22,42)" rx="2" ry="2" />
+<text  x="1185.06" y="863.5" ></text>
+</g>
+<g >
+<title>path_init (329,158,715 samples, 0.28%)</title><rect x="15.7" y="773" width="3.4" height="15.0" fill="rgb(254,151,3)" rx="2" ry="2" />
+<text  x="18.72" y="783.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (12,814,153 samples, 0.01%)</title><rect x="42.7" y="725" width="0.1" height="15.0" fill="rgb(246,133,30)" rx="2" ry="2" />
+<text  x="45.66" y="735.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt;::vector (2,480,154,560 samples, 2.14%)</title><rect x="324.5" y="901" width="25.2" height="15.0" fill="rgb(217,78,38)" rx="2" ry="2" />
+<text  x="327.47" y="911.5" >s..</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_find_node (1,418,471,930 samples, 1.22%)</title><rect x="282.4" y="837" width="14.4" height="15.0" fill="rgb(221,55,32)" rx="2" ry="2" />
+<text  x="285.37" y="847.5" ></text>
+</g>
+<g >
+<title>tick_program_event (26,764,133 samples, 0.02%)</title><rect x="658.2" y="757" width="0.3" height="15.0" fill="rgb(240,136,27)" rx="2" ry="2" />
+<text  x="661.25" y="767.5" ></text>
+</g>
+<g >
+<title>v8::internal::(anonymous namespace)::Invoke (26,895,275 samples, 0.02%)</title><rect x="42.5" y="789" width="0.3" height="15.0" fill="rgb(216,208,28)" rx="2" ry="2" />
+<text  x="45.54" y="799.5" ></text>
+</g>
+<g >
+<title>[unknown] (327,391,349 samples, 0.28%)</title><rect x="649.1" y="933" width="3.3" height="15.0" fill="rgb(232,205,43)" rx="2" ry="2" />
+<text  x="652.10" y="943.5" ></text>
+</g>
+<g >
+<title>kworker/24:2-mm (18,773,846 samples, 0.02%)</title><rect x="28.4" y="949" width="0.2" height="15.0" fill="rgb(210,211,41)" rx="2" ry="2" />
+<text  x="31.43" y="959.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_hash_code (671,436,432 samples, 0.58%)</title><rect x="235.6" y="821" width="6.8" height="15.0" fill="rgb(231,148,20)" rx="2" ry="2" />
+<text  x="238.59" y="831.5" ></text>
+</g>
+<g >
+<title>Builtins_JSEntry (26,492,371 samples, 0.02%)</title><rect x="42.5" y="773" width="0.3" height="15.0" fill="rgb(223,140,51)" rx="2" ry="2" />
+<text  x="45.54" y="783.5" ></text>
+</g>
+<g >
+<title>kthread (18,773,846 samples, 0.02%)</title><rect x="28.4" y="917" width="0.2" height="15.0" fill="rgb(230,3,51)" rx="2" ry="2" />
+<text  x="31.43" y="927.5" ></text>
+</g>
+<g >
+<title>std::unordered_map&lt;unsigned __int128, libfixeypointy::MagicNumber128, libfixeypointy::Unsigned128BitHash, std::equal_to&lt;unsigned __int128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt; &gt;::count (1,832,830,623 samples, 1.58%)</title><rect x="224.7" y="869" width="18.6" height="15.0" fill="rgb(233,65,45)" rx="2" ry="2" />
+<text  x="227.70" y="879.5" ></text>
+</g>
+<g >
+<title>__alloc_pages (489,618,624 samples, 0.42%)</title><rect x="10.2" y="741" width="5.0" height="15.0" fill="rgb(250,96,8)" rx="2" ry="2" />
+<text  x="13.18" y="751.5" ></text>
+</g>
+<g >
+<title>update_process_times (30,077,533 samples, 0.03%)</title><rect x="290.7" y="693" width="0.3" height="15.0" fill="rgb(249,228,41)" rx="2" ry="2" />
+<text  x="293.66" y="703.5" ></text>
+</g>
+<g >
+<title>try_to_wake_up (82,112,394 samples, 0.07%)</title><rect x="46.6" y="677" width="0.8" height="15.0" fill="rgb(219,220,45)" rx="2" ry="2" />
+<text  x="49.56" y="687.5" ></text>
+</g>
+<g >
+<title>cpuidle_enter (729,043,470 samples, 0.63%)</title><rect x="1182.4" y="789" width="7.4" height="15.0" fill="rgb(241,228,37)" rx="2" ry="2" />
+<text  x="1185.40" y="799.5" ></text>
+</g>
+<g >
+<title>node::ThreadPoolWork::ScheduleWork (289,192,928 samples, 0.25%)</title><rect x="39.2" y="805" width="2.9" height="15.0" fill="rgb(243,81,50)" rx="2" ry="2" />
+<text  x="42.16" y="815.5" ></text>
+</g>
+<g >
+<title>__x64_sys_madvise (557,805,664 samples, 0.48%)</title><rect x="33.3" y="805" width="5.6" height="15.0" fill="rgb(220,217,41)" rx="2" ry="2" />
+<text  x="36.27" y="815.5" ></text>
+</g>
+<g >
+<title>__cond_resched (37,473,026 samples, 0.03%)</title><rect x="47.6" y="693" width="0.4" height="15.0" fill="rgb(216,210,37)" rx="2" ry="2" />
+<text  x="50.64" y="703.5" ></text>
+</g>
+<g >
+<title>radix_tree_next_chunk (327,391,349 samples, 0.28%)</title><rect x="649.1" y="741" width="3.3" height="15.0" fill="rgb(228,85,47)" rx="2" ry="2" />
+<text  x="652.10" y="751.5" ></text>
+</g>
+<g >
+<title>[liblibfixeypointy.so] (60,456,083 samples, 0.05%)</title><rect x="265.8" y="853" width="0.6" height="15.0" fill="rgb(221,153,15)" rx="2" ry="2" />
+<text  x="268.78" y="863.5" ></text>
+</g>
+<g >
+<title>v8::internal::(anonymous namespace)::InvokeWithTryCatch (284,237,088 samples, 0.25%)</title><rect x="39.2" y="677" width="2.9" height="15.0" fill="rgb(209,46,40)" rx="2" ry="2" />
+<text  x="42.19" y="687.5" ></text>
+</g>
+<g >
+<title>std::__uninitialized_copy&lt;false&gt;::__uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;, libfixeypointy::Decimal*&gt; (2,147,874,693 samples, 1.85%)</title><rect x="327.9" y="853" width="21.8" height="15.0" fill="rgb(241,137,36)" rx="2" ry="2" />
+<text  x="330.85" y="863.5" >s..</text>
+</g>
+<g >
+<title>__hrtimer_run_queues (30,182,299 samples, 0.03%)</title><rect x="86.4" y="821" width="0.3" height="15.0" fill="rgb(229,28,47)" rx="2" ry="2" />
+<text  x="89.38" y="831.5" ></text>
+</g>
+<g >
+<title>[unknown] (120,616,330 samples, 0.10%)</title><rect x="639.5" y="885" width="1.2" height="15.0" fill="rgb(252,126,3)" rx="2" ry="2" />
+<text  x="642.47" y="895.5" ></text>
+</g>
+<g >
+<title>__udivti3 (4,985,794,343 samples, 4.30%)</title><rect x="125.7" y="885" width="50.8" height="15.0" fill="rgb(245,69,33)" rx="2" ry="2" />
+<text  x="128.73" y="895.5" >__udi..</text>
+</g>
+<g >
+<title>libfixeypointy::GetNumLeadingZeroesAssumingNonZero (302,257,463 samples, 0.26%)</title><rect x="213.6" y="869" width="3.1" height="15.0" fill="rgb(247,22,31)" rx="2" ry="2" />
+<text  x="216.61" y="879.5" ></text>
+</g>
+<g >
+<title>non-virtual thunk to v8::internal::CancelableTask::Run (146,463,155 samples, 0.13%)</title><rect x="31.8" y="901" width="1.5" height="15.0" fill="rgb(233,25,8)" rx="2" ry="2" />
+<text  x="34.78" y="911.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (30,077,533 samples, 0.03%)</title><rect x="290.7" y="789" width="0.3" height="15.0" fill="rgb(249,147,35)" rx="2" ry="2" />
+<text  x="293.66" y="799.5" ></text>
+</g>
+<g >
+<title>search_binary_handler (107,099,604 samples, 0.09%)</title><rect x="44.0" y="805" width="1.1" height="15.0" fill="rgb(232,127,14)" rx="2" ry="2" />
+<text  x="46.97" y="815.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (937,179,408 samples, 0.81%)</title><rect x="354.3" y="917" width="9.6" height="15.0" fill="rgb(221,147,0)" rx="2" ry="2" />
+<text  x="357.32" y="927.5" ></text>
+</g>
+<g >
+<title>worker_thread (32,911,701 samples, 0.03%)</title><rect x="28.1" y="901" width="0.3" height="15.0" fill="rgb(225,222,18)" rx="2" ry="2" />
+<text  x="31.09" y="911.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (11,626,072 samples, 0.01%)</title><rect x="42.1" y="581" width="0.1" height="15.0" fill="rgb(220,112,43)" rx="2" ry="2" />
+<text  x="45.11" y="591.5" ></text>
+</g>
+<g >
+<title>[libstdc++.so.6.0.30] (3,052,615,293 samples, 2.63%)</title><rect x="459.2" y="917" width="31.1" height="15.0" fill="rgb(238,35,35)" rx="2" ry="2" />
+<text  x="462.21" y="927.5" >[l..</text>
+</g>
+<g >
+<title>perf_ioctl (15,643,035 samples, 0.01%)</title><rect x="45.1" y="789" width="0.2" height="15.0" fill="rgb(208,90,8)" rx="2" ry="2" />
+<text  x="48.11" y="799.5" ></text>
+</g>
+<g >
+<title>get_page_from_freelist (489,618,624 samples, 0.42%)</title><rect x="10.2" y="725" width="5.0" height="15.0" fill="rgb(211,17,2)" rx="2" ry="2" />
+<text  x="13.18" y="735.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Unsigned128BitHash::operator (1,359,486,507 samples, 1.17%)</title><rect x="298.0" y="821" width="13.9" height="15.0" fill="rgb(245,88,9)" rx="2" ry="2" />
+<text  x="301.04" y="831.5" ></text>
+</g>
+<g >
+<title>v8::internal::JSDate::New (11,081,904 samples, 0.01%)</title><rect x="42.1" y="517" width="0.1" height="15.0" fill="rgb(240,117,7)" rx="2" ry="2" />
+<text  x="45.11" y="527.5" ></text>
+</g>
+<g >
+<title>idr_get_next (327,391,349 samples, 0.28%)</title><rect x="649.1" y="773" width="3.3" height="15.0" fill="rgb(246,199,12)" rx="2" ry="2" />
+<text  x="652.10" y="783.5" ></text>
+</g>
+<g >
+<title>v8::internal::LookupIterator::ApplyTransitionToDataProperty (283,576,488 samples, 0.24%)</title><rect x="39.2" y="85" width="2.9" height="15.0" fill="rgb(234,88,51)" rx="2" ry="2" />
+<text  x="42.20" y="95.5" ></text>
+</g>
+<g >
+<title>ixgbe_read_i2c_byte_generic (288,312,845 samples, 0.25%)</title><rect x="28.7" y="789" width="2.9" height="15.0" fill="rgb(244,50,1)" rx="2" ry="2" />
+<text  x="31.66" y="799.5" ></text>
+</g>
+<g >
+<title>worker_thread (296,997,145 samples, 0.26%)</title><rect x="28.7" y="901" width="3.0" height="15.0" fill="rgb(226,95,36)" rx="2" ry="2" />
+<text  x="31.66" y="911.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (15,442,039 samples, 0.01%)</title><rect x="15.4" y="933" width="0.1" height="15.0" fill="rgb(231,92,30)" rx="2" ry="2" />
+<text  x="18.36" y="943.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="293" width="2.9" height="15.0" fill="rgb(230,21,53)" rx="2" ry="2" />
+<text  x="42.20" y="303.5" ></text>
+</g>
+<g >
+<title>__x64_sys_sched_setaffinity (270,295,683 samples, 0.23%)</title><rect x="45.3" y="805" width="2.7" height="15.0" fill="rgb(233,2,24)" rx="2" ry="2" />
+<text  x="48.27" y="815.5" ></text>
+</g>
+<g >
+<title>[unknown] (60,492,429 samples, 0.05%)</title><rect x="493.3" y="901" width="0.7" height="15.0" fill="rgb(243,144,0)" rx="2" ry="2" />
+<text  x="496.34" y="911.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_bucket_index (30,211,166 samples, 0.03%)</title><rect x="296.8" y="837" width="0.3" height="15.0" fill="rgb(254,152,20)" rx="2" ry="2" />
+<text  x="299.80" y="847.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (12,220,716 samples, 0.01%)</title><rect x="43.2" y="885" width="0.1" height="15.0" fill="rgb(232,211,2)" rx="2" ry="2" />
+<text  x="46.21" y="895.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (30,182,299 samples, 0.03%)</title><rect x="86.4" y="853" width="0.3" height="15.0" fill="rgb(234,148,30)" rx="2" ry="2" />
+<text  x="89.38" y="863.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (490,858,613 samples, 0.42%)</title><rect x="10.2" y="917" width="5.0" height="15.0" fill="rgb(234,166,1)" rx="2" ry="2" />
+<text  x="13.16" y="927.5" ></text>
+</g>
+<g >
+<title>zap_pte_range (92,200,934 samples, 0.08%)</title><rect x="44.1" y="645" width="1.0" height="15.0" fill="rgb(217,100,35)" rx="2" ry="2" />
+<text  x="47.12" y="655.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;__int128&gt;::max (30,288,384 samples, 0.03%)</title><rect x="86.7" y="885" width="0.3" height="15.0" fill="rgb(246,190,16)" rx="2" ry="2" />
+<text  x="89.69" y="895.5" ></text>
+</g>
+<g >
+<title>node::AsyncWrap::MakeCallback (289,192,928 samples, 0.25%)</title><rect x="39.2" y="773" width="2.9" height="15.0" fill="rgb(250,68,0)" rx="2" ry="2" />
+<text  x="42.16" y="783.5" ></text>
+</g>
+<g >
+<title>do_user_addr_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="869" width="0.1" height="15.0" fill="rgb(252,172,7)" rx="2" ry="2" />
+<text  x="18.36" y="879.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_equals (90,508,697 samples, 0.08%)</title><rect x="295.0" y="805" width="0.9" height="15.0" fill="rgb(221,179,19)" rx="2" ry="2" />
+<text  x="297.96" y="815.5" ></text>
+</g>
+<g >
+<title>std::runtime_error::~runtime_error (60,450,659 samples, 0.05%)</title><rect x="351.2" y="917" width="0.7" height="15.0" fill="rgb(223,35,54)" rx="2" ry="2" />
+<text  x="354.24" y="927.5" ></text>
+</g>
+<g >
+<title>clear_page_erms (19,652,537 samples, 0.02%)</title><rect x="43.6" y="677" width="0.2" height="15.0" fill="rgb(229,28,7)" rx="2" ry="2" />
+<text  x="46.57" y="687.5" ></text>
+</g>
+<g >
+<title>__gxx_personality_v0 (998,368,624 samples, 0.86%)</title><rect x="541.3" y="917" width="10.2" height="15.0" fill="rgb(219,158,8)" rx="2" ry="2" />
+<text  x="544.34" y="927.5" ></text>
+</g>
+<g >
+<title>handle_pte_fault (22,507,893 samples, 0.02%)</title><rect x="42.9" y="821" width="0.2" height="15.0" fill="rgb(244,28,28)" rx="2" ry="2" />
+<text  x="45.87" y="831.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, true&gt;::_Node_iterator_base (30,215,575 samples, 0.03%)</title><rect x="243.0" y="821" width="0.3" height="15.0" fill="rgb(254,11,16)" rx="2" ry="2" />
+<text  x="246.04" y="831.5" ></text>
+</g>
+<g >
+<title>native_write_msr (26,488,475 samples, 0.02%)</title><rect x="658.3" y="725" width="0.2" height="15.0" fill="rgb(212,33,6)" rx="2" ry="2" />
+<text  x="661.25" y="735.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::ToNative (150,340,530 samples, 0.13%)</title><rect x="315.9" y="901" width="1.5" height="15.0" fill="rgb(250,167,36)" rx="2" ry="2" />
+<text  x="318.86" y="911.5" ></text>
+</g>
+<g >
+<title>__libc_fork (14,414,738 samples, 0.01%)</title><rect x="43.8" y="933" width="0.2" height="15.0" fill="rgb(228,219,8)" rx="2" ry="2" />
+<text  x="46.82" y="943.5" ></text>
+</g>
+<g >
+<title>[unknown] (27,031,143,196 samples, 23.31%)</title><rect x="367.9" y="933" width="275.0" height="15.0" fill="rgb(215,96,49)" rx="2" ry="2" />
+<text  x="370.85" y="943.5" >[unknown]</text>
+</g>
+<g >
+<title>do_syscall_64 (19,242,768 samples, 0.02%)</title><rect x="45.1" y="821" width="0.2" height="15.0" fill="rgb(224,54,48)" rx="2" ry="2" />
+<text  x="48.07" y="831.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (42,385,430 samples, 0.04%)</title><rect x="43.4" y="901" width="0.4" height="15.0" fill="rgb(247,72,30)" rx="2" ry="2" />
+<text  x="46.38" y="911.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt;::operator[] (423,143,240 samples, 0.36%)</title><rect x="320.2" y="901" width="4.3" height="15.0" fill="rgb(205,56,0)" rx="2" ry="2" />
+<text  x="323.17" y="911.5" ></text>
+</g>
+<g >
+<title>__x64_sys_getdents64 (327,391,349 samples, 0.28%)</title><rect x="649.1" y="869" width="3.3" height="15.0" fill="rgb(214,4,18)" rx="2" ry="2" />
+<text  x="652.10" y="879.5" ></text>
+</g>
+<g >
+<title>proc_pid_readdir (327,391,349 samples, 0.28%)</title><rect x="649.1" y="821" width="3.3" height="15.0" fill="rgb(226,30,31)" rx="2" ry="2" />
+<text  x="652.10" y="831.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, true&gt;::_M_next (60,555,789 samples, 0.05%)</title><rect x="294.3" y="805" width="0.7" height="15.0" fill="rgb(238,70,17)" rx="2" ry="2" />
+<text  x="297.35" y="815.5" ></text>
+</g>
+<g >
+<title>v8::internal::Execution::TryRunMicrotasks (11,626,072 samples, 0.01%)</title><rect x="42.1" y="693" width="0.1" height="15.0" fill="rgb(218,225,47)" rx="2" ry="2" />
+<text  x="45.11" y="703.5" ></text>
+</g>
+<g >
+<title>ttwu_do_activate (24,952,741 samples, 0.02%)</title><rect x="47.1" y="661" width="0.3" height="15.0" fill="rgb(240,23,30)" rx="2" ry="2" />
+<text  x="50.14" y="671.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_S_equals (30,052,190 samples, 0.03%)</title><rect x="295.9" y="805" width="0.3" height="15.0" fill="rgb(206,175,28)" rx="2" ry="2" />
+<text  x="298.88" y="815.5" ></text>
+</g>
+<g >
+<title>cpu_startup_entry (746,860,113 samples, 0.64%)</title><rect x="1182.4" y="837" width="7.6" height="15.0" fill="rgb(216,225,19)" rx="2" ry="2" />
+<text  x="1185.40" y="847.5" ></text>
+</g>
+<g >
+<title>ext4_readdir (40,518,904 samples, 0.03%)</title><rect x="27.6" y="837" width="0.4" height="15.0" fill="rgb(236,50,52)" rx="2" ry="2" />
+<text  x="30.62" y="847.5" ></text>
+</g>
+<g >
+<title>asm_common_interrupt (12,955,328 samples, 0.01%)</title><rect x="658.0" y="821" width="0.2" height="15.0" fill="rgb(209,213,36)" rx="2" ry="2" />
+<text  x="661.03" y="831.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="309" width="2.9" height="15.0" fill="rgb(242,222,33)" rx="2" ry="2" />
+<text  x="42.20" y="319.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="405" width="2.9" height="15.0" fill="rgb(212,107,32)" rx="2" ry="2" />
+<text  x="42.20" y="415.5" ></text>
+</g>
+<g >
+<title>node (1,306,569,766 samples, 1.13%)</title><rect x="31.8" y="949" width="13.3" height="15.0" fill="rgb(244,26,33)" rx="2" ry="2" />
+<text  x="34.78" y="959.5" ></text>
+</g>
+<g >
+<title>start_kernel (746,860,113 samples, 0.64%)</title><rect x="1182.4" y="885" width="7.6" height="15.0" fill="rgb(209,73,26)" rx="2" ry="2" />
+<text  x="1185.40" y="895.5" ></text>
+</g>
+<g >
+<title>psi_group_change (29,138,606 samples, 0.03%)</title><rect x="1182.1" y="821" width="0.3" height="15.0" fill="rgb(206,2,9)" rx="2" ry="2" />
+<text  x="1185.08" y="831.5" ></text>
+</g>
+<g >
+<title>bprm_execve.part.0 (107,099,604 samples, 0.09%)</title><rect x="44.0" y="837" width="1.1" height="15.0" fill="rgb(250,125,16)" rx="2" ry="2" />
+<text  x="46.97" y="847.5" ></text>
+</g>
+<g >
+<title>[liblibfixeypointy.so] (30,290,573 samples, 0.03%)</title><rect x="227.2" y="821" width="0.3" height="15.0" fill="rgb(230,159,3)" rx="2" ry="2" />
+<text  x="230.16" y="831.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_hash (30,276,206 samples, 0.03%)</title><rect x="311.9" y="821" width="0.3" height="15.0" fill="rgb(213,49,12)" rx="2" ry="2" />
+<text  x="314.87" y="831.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (756,079,005 samples, 0.65%)</title><rect x="385.7" y="917" width="7.7" height="15.0" fill="rgb(253,128,54)" rx="2" ry="2" />
+<text  x="388.68" y="927.5" ></text>
+</g>
+<g >
+<title>std::_Construct&lt;libfixeypointy::Decimal, libfixeypointy::Decimal const&amp;&gt; (603,698,432 samples, 0.52%)</title><rect x="342.9" y="837" width="6.2" height="15.0" fill="rgb(212,128,32)" rx="2" ry="2" />
+<text  x="345.95" y="847.5" ></text>
+</g>
+<g >
+<title>[liblibfixeypointy.so] (60,501,887 samples, 0.05%)</title><rect x="224.1" y="869" width="0.6" height="15.0" fill="rgb(211,85,8)" rx="2" ry="2" />
+<text  x="227.08" y="879.5" ></text>
+</g>
+<g >
+<title>v8::internal::Factory::NewJSObjectFromMap (11,081,904 samples, 0.01%)</title><rect x="42.1" y="485" width="0.1" height="15.0" fill="rgb(227,27,14)" rx="2" ry="2" />
+<text  x="45.11" y="495.5" ></text>
+</g>
+<g >
+<title>x86_64_start_reservations (746,860,113 samples, 0.64%)</title><rect x="1182.4" y="901" width="7.6" height="15.0" fill="rgb(228,146,13)" rx="2" ry="2" />
+<text  x="1185.40" y="911.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;::operator++ (60,424,566 samples, 0.05%)</title><rect x="325.7" y="853" width="0.6" height="15.0" fill="rgb(234,61,6)" rx="2" ry="2" />
+<text  x="328.70" y="863.5" ></text>
+</g>
+<g >
+<title>Builtins_RunMicrotasks (284,237,088 samples, 0.25%)</title><rect x="39.2" y="629" width="2.9" height="15.0" fill="rgb(249,73,48)" rx="2" ry="2" />
+<text  x="42.19" y="639.5" ></text>
+</g>
+<g >
+<title>ixgbe_clock_out_i2c_bit (281,446,896 samples, 0.24%)</title><rect x="28.7" y="741" width="2.8" height="15.0" fill="rgb(244,173,45)" rx="2" ry="2" />
+<text  x="31.66" y="751.5" ></text>
+</g>
+<g >
+<title>v8::internal::OptimizedCompilationJob::ExecuteJob (146,463,155 samples, 0.13%)</title><rect x="31.8" y="869" width="1.5" height="15.0" fill="rgb(211,131,20)" rx="2" ry="2" />
+<text  x="34.78" y="879.5" ></text>
+</g>
+<g >
+<title>enqueue_task (24,952,741 samples, 0.02%)</title><rect x="47.1" y="645" width="0.3" height="15.0" fill="rgb(206,37,28)" rx="2" ry="2" />
+<text  x="50.14" y="655.5" ></text>
+</g>
+<g >
+<title>wait_for_completion (37,473,026 samples, 0.03%)</title><rect x="47.6" y="725" width="0.4" height="15.0" fill="rgb(215,123,20)" rx="2" ry="2" />
+<text  x="50.64" y="735.5" ></text>
+</g>
+<g >
+<title>Builtins_AsyncFunctionAwaitResolveClosure (284,237,088 samples, 0.25%)</title><rect x="39.2" y="597" width="2.9" height="15.0" fill="rgb(240,143,31)" rx="2" ry="2" />
+<text  x="42.19" y="607.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_bucket_index (30,291,850 samples, 0.03%)</title><rect x="294.0" y="805" width="0.3" height="15.0" fill="rgb(225,123,37)" rx="2" ry="2" />
+<text  x="297.04" y="815.5" ></text>
+</g>
+<g >
+<title>Builtins_JSEntryTrampoline (26,492,371 samples, 0.02%)</title><rect x="42.5" y="757" width="0.3" height="15.0" fill="rgb(230,168,44)" rx="2" ry="2" />
+<text  x="45.54" y="767.5" ></text>
+</g>
+<g >
+<title>ixgbe_read_i2c_eeprom_generic (288,312,845 samples, 0.25%)</title><rect x="28.7" y="805" width="2.9" height="15.0" fill="rgb(248,186,36)" rx="2" ry="2" />
+<text  x="31.66" y="815.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_bucket_index (362,115,495 samples, 0.31%)</title><rect x="227.8" y="805" width="3.7" height="15.0" fill="rgb(230,92,29)" rx="2" ry="2" />
+<text  x="230.78" y="815.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator (30,207,460 samples, 0.03%)</title><rect x="281.1" y="821" width="0.4" height="15.0" fill="rgb(247,142,36)" rx="2" ry="2" />
+<text  x="284.14" y="831.5" ></text>
+</g>
+<g >
+<title>iterate_dir (327,391,349 samples, 0.28%)</title><rect x="649.1" y="853" width="3.3" height="15.0" fill="rgb(250,10,40)" rx="2" ry="2" />
+<text  x="652.10" y="863.5" ></text>
+</g>
+<g >
+<title>_Unwind_GetCFA (30,111,798 samples, 0.03%)</title><rect x="363.9" y="917" width="0.3" height="15.0" fill="rgb(250,67,39)" rx="2" ry="2" />
+<text  x="366.85" y="927.5" ></text>
+</g>
+<g >
+<title>_Unwind_GetCFA (60,533,228 samples, 0.05%)</title><rect x="532.4" y="869" width="0.6" height="15.0" fill="rgb(231,134,19)" rx="2" ry="2" />
+<text  x="535.42" y="879.5" ></text>
+</g>
+<g >
+<title>[libstdc++.so.6.0.30] (1,390,574,622 samples, 1.20%)</title><rect x="353.7" y="933" width="14.2" height="15.0" fill="rgb(227,209,18)" rx="2" ry="2" />
+<text  x="356.70" y="943.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (557,805,664 samples, 0.48%)</title><rect x="33.3" y="837" width="5.6" height="15.0" fill="rgb(235,84,14)" rx="2" ry="2" />
+<text  x="36.27" y="847.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;::base (60,511,284 samples, 0.05%)</title><rect x="330.3" y="837" width="0.6" height="15.0" fill="rgb(206,227,44)" rx="2" ry="2" />
+<text  x="333.32" y="847.5" ></text>
+</g>
+<g >
+<title>[liblibfixeypointy.so] (151,030,582 samples, 0.13%)</title><rect x="269.5" y="837" width="1.5" height="15.0" fill="rgb(232,86,52)" rx="2" ry="2" />
+<text  x="272.47" y="847.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="229" width="2.9" height="15.0" fill="rgb(223,194,12)" rx="2" ry="2" />
+<text  x="42.20" y="239.5" ></text>
+</g>
+<g >
+<title>node::AsyncWrap::MakeCallback (13,363,680 samples, 0.01%)</title><rect x="42.1" y="773" width="0.1" height="15.0" fill="rgb(235,71,7)" rx="2" ry="2" />
+<text  x="45.11" y="783.5" ></text>
+</g>
+<g >
+<title>ixgbe_read_i2c_byte_generic_int (288,312,845 samples, 0.25%)</title><rect x="28.7" y="773" width="2.9" height="15.0" fill="rgb(207,33,45)" rx="2" ry="2" />
+<text  x="31.66" y="783.5" ></text>
+</g>
+<g >
+<title>ixgbe_service_task (296,997,145 samples, 0.26%)</title><rect x="28.7" y="869" width="3.0" height="15.0" fill="rgb(217,169,37)" rx="2" ry="2" />
+<text  x="31.66" y="879.5" ></text>
+</g>
+<g >
+<title>std::runtime_error::runtime_error (151,169,205 samples, 0.13%)</title><rect x="349.7" y="917" width="1.5" height="15.0" fill="rgb(221,90,13)" rx="2" ry="2" />
+<text  x="352.71" y="927.5" ></text>
+</g>
+<g >
+<title>next_tgid (327,391,349 samples, 0.28%)</title><rect x="649.1" y="805" width="3.3" height="15.0" fill="rgb(245,139,44)" rx="2" ry="2" />
+<text  x="652.10" y="815.5" ></text>
+</g>
+<g >
+<title>v8::internal::MicrotaskQueue::PerformCheckpoint (11,626,072 samples, 0.01%)</title><rect x="42.1" y="725" width="0.1" height="15.0" fill="rgb(228,91,39)" rx="2" ry="2" />
+<text  x="45.11" y="735.5" ></text>
+</g>
+<g >
+<title>release_pages (557,407,102 samples, 0.48%)</title><rect x="33.3" y="725" width="5.6" height="15.0" fill="rgb(220,220,3)" rx="2" ry="2" />
+<text  x="36.27" y="735.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_find_before_node (1,297,687,432 samples, 1.12%)</title><rect x="283.0" y="821" width="13.2" height="15.0" fill="rgb(237,85,20)" rx="2" ry="2" />
+<text  x="285.99" y="831.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (12,083,394 samples, 0.01%)</title><rect x="39.0" y="821" width="0.1" height="15.0" fill="rgb(253,76,41)" rx="2" ry="2" />
+<text  x="41.97" y="831.5" ></text>
+</g>
+<g >
+<title>main (28,016,262,530 samples, 24.15%)</title><rect x="64.7" y="917" width="285.0" height="15.0" fill="rgb(215,57,38)" rx="2" ry="2" />
+<text  x="67.68" y="927.5" >main</text>
+</g>
+<g >
+<title>handle_mm_fault (22,507,893 samples, 0.02%)</title><rect x="42.9" y="853" width="0.2" height="15.0" fill="rgb(224,40,45)" rx="2" ry="2" />
+<text  x="45.87" y="863.5" ></text>
+</g>
+<g >
+<title>[liblibfixeypointy.so] (211,508,775 samples, 0.18%)</title><rect x="73.5" y="901" width="2.1" height="15.0" fill="rgb(227,35,27)" rx="2" ry="2" />
+<text  x="76.47" y="911.5" ></text>
+</g>
+<g >
+<title>[libstdc++.so.6.0.30] (60,497,328 samples, 0.05%)</title><rect x="519.5" y="885" width="0.6" height="15.0" fill="rgb(214,118,7)" rx="2" ry="2" />
+<text  x="522.50" y="895.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (16,225,741 samples, 0.01%)</title><rect x="15.5" y="901" width="0.2" height="15.0" fill="rgb(210,161,11)" rx="2" ry="2" />
+<text  x="18.52" y="911.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (30,137,775 samples, 0.03%)</title><rect x="213.3" y="773" width="0.3" height="15.0" fill="rgb(207,200,15)" rx="2" ry="2" />
+<text  x="216.31" y="783.5" ></text>
+</g>
+<g >
+<title>__tls_get_addr (60,534,162 samples, 0.05%)</title><rect x="62.8" y="917" width="0.6" height="15.0" fill="rgb(245,21,3)" rx="2" ry="2" />
+<text  x="65.83" y="927.5" ></text>
+</g>
+<g >
+<title>arch_call_rest_init (746,860,113 samples, 0.64%)</title><rect x="1182.4" y="869" width="7.6" height="15.0" fill="rgb(249,47,33)" rx="2" ry="2" />
+<text  x="1185.40" y="879.5" ></text>
+</g>
+<g >
+<title>__set_cpus_allowed_ptr_locked (264,385,976 samples, 0.23%)</title><rect x="45.3" y="757" width="2.7" height="15.0" fill="rgb(252,113,35)" rx="2" ry="2" />
+<text  x="48.33" y="767.5" ></text>
+</g>
+<g >
+<title>acpi_ds_evaluate_name_path (10,767,969 samples, 0.01%)</title><rect x="28.2" y="757" width="0.1" height="15.0" fill="rgb(214,104,33)" rx="2" ry="2" />
+<text  x="31.18" y="767.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (40,518,904 samples, 0.03%)</title><rect x="27.6" y="901" width="0.4" height="15.0" fill="rgb(213,24,50)" rx="2" ry="2" />
+<text  x="30.62" y="911.5" ></text>
+</g>
+<g >
+<title>node::fs::AfterNoArgs (13,363,680 samples, 0.01%)</title><rect x="42.1" y="805" width="0.1" height="15.0" fill="rgb(244,76,49)" rx="2" ry="2" />
+<text  x="45.11" y="815.5" ></text>
+</g>
+<g >
+<title>node::InternalCallbackScope::Close (11,626,072 samples, 0.01%)</title><rect x="42.1" y="741" width="0.1" height="15.0" fill="rgb(224,184,15)" rx="2" ry="2" />
+<text  x="45.11" y="751.5" ></text>
+</g>
+<g >
+<title>do_idle (52,072,246,638 samples, 44.90%)</title><rect x="652.6" y="885" width="529.8" height="15.0" fill="rgb(253,56,45)" rx="2" ry="2" />
+<text  x="655.63" y="895.5" >do_idle</text>
+</g>
+<g >
+<title>read_tsc (30,182,299 samples, 0.03%)</title><rect x="86.4" y="789" width="0.3" height="15.0" fill="rgb(222,130,41)" rx="2" ry="2" />
+<text  x="89.38" y="799.5" ></text>
+</g>
+<g >
+<title>main (294,626,664 samples, 0.25%)</title><rect x="45.1" y="917" width="3.0" height="15.0" fill="rgb(253,223,40)" rx="2" ry="2" />
+<text  x="48.07" y="927.5" ></text>
+</g>
+<g >
+<title>node::Start (380,564,981 samples, 0.33%)</title><rect x="38.9" y="917" width="3.9" height="15.0" fill="rgb(235,139,9)" rx="2" ry="2" />
+<text  x="41.94" y="927.5" ></text>
+</g>
+<g >
+<title>std::unordered_map&lt;unsigned __int128, libfixeypointy::MagicNumber256, libfixeypointy::Unsigned128BitHash, std::equal_to&lt;unsigned __int128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt; &gt;::count (5,224,901,487 samples, 4.50%)</title><rect x="262.7" y="885" width="53.2" height="15.0" fill="rgb(243,165,46)" rx="2" ry="2" />
+<text  x="265.70" y="895.5" >std::..</text>
+</g>
+<g >
+<title>__update_load_avg_se (22,538,411 samples, 0.02%)</title><rect x="46.0" y="677" width="0.2" height="15.0" fill="rgb(214,171,15)" rx="2" ry="2" />
+<text  x="49.00" y="687.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (30,041,604,865 samples, 25.90%)</title><rect x="48.1" y="933" width="305.6" height="15.0" fill="rgb(252,45,49)" rx="2" ry="2" />
+<text  x="51.07" y="943.5" >[libc.so.6]</text>
+</g>
+<g >
+<title>run_rebalance_domains (22,294,428 samples, 0.02%)</title><rect x="658.6" y="773" width="0.3" height="15.0" fill="rgb(228,54,54)" rx="2" ry="2" />
+<text  x="661.63" y="783.5" ></text>
+</g>
+<g >
+<title>execve (107,099,604 samples, 0.09%)</title><rect x="44.0" y="933" width="1.1" height="15.0" fill="rgb(229,151,24)" rx="2" ry="2" />
+<text  x="46.97" y="943.5" ></text>
+</g>
+<g >
+<title>__handle_mm_fault (22,507,893 samples, 0.02%)</title><rect x="42.9" y="837" width="0.2" height="15.0" fill="rgb(238,8,25)" rx="2" ry="2" />
+<text  x="45.87" y="847.5" ></text>
+</g>
+<g >
+<title>__x64_sys_newfstatat (1,170,231,463 samples, 1.01%)</title><rect x="15.7" y="869" width="11.9" height="15.0" fill="rgb(240,38,28)" rx="2" ry="2" />
+<text  x="18.68" y="879.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (34,827,679 samples, 0.03%)</title><rect x="658.2" y="773" width="0.3" height="15.0" fill="rgb(207,38,27)" rx="2" ry="2" />
+<text  x="661.17" y="783.5" ></text>
+</g>
+<g >
+<title>set_next_entity (38,337,967 samples, 0.03%)</title><rect x="45.8" y="709" width="0.4" height="15.0" fill="rgb(209,85,31)" rx="2" ry="2" />
+<text  x="48.84" y="719.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="437" width="2.9" height="15.0" fill="rgb(208,224,41)" rx="2" ry="2" />
+<text  x="42.20" y="447.5" ></text>
+</g>
+<g >
+<title>__x64_sys_openat (12,220,716 samples, 0.01%)</title><rect x="43.2" y="869" width="0.1" height="15.0" fill="rgb(252,79,21)" rx="2" ry="2" />
+<text  x="46.21" y="879.5" ></text>
+</g>
+<g >
+<title>std::string::_Rep::_S_create (30,290,658 samples, 0.03%)</title><rect x="642.5" y="885" width="0.4" height="15.0" fill="rgb(224,27,52)" rx="2" ry="2" />
+<text  x="645.55" y="895.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (30,137,775 samples, 0.03%)</title><rect x="213.3" y="805" width="0.3" height="15.0" fill="rgb(238,17,32)" rx="2" ry="2" />
+<text  x="216.31" y="815.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;::operator++ (576,758,180 samples, 0.50%)</title><rect x="332.8" y="837" width="5.8" height="15.0" fill="rgb(217,97,37)" rx="2" ry="2" />
+<text  x="335.78" y="847.5" ></text>
+</g>
+<g >
+<title>uv__work_done (302,556,608 samples, 0.26%)</title><rect x="39.2" y="821" width="3.0" height="15.0" fill="rgb(232,38,10)" rx="2" ry="2" />
+<text  x="42.16" y="831.5" ></text>
+</g>
+<g >
+<title>__get_free_pages (489,618,624 samples, 0.42%)</title><rect x="10.2" y="773" width="5.0" height="15.0" fill="rgb(243,178,37)" rx="2" ry="2" />
+<text  x="13.18" y="783.5" ></text>
+</g>
+<g >
+<title>_perf_ioctl (15,643,035 samples, 0.01%)</title><rect x="45.1" y="773" width="0.2" height="15.0" fill="rgb(233,204,30)" rx="2" ry="2" />
+<text  x="48.11" y="783.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (30,077,533 samples, 0.03%)</title><rect x="290.7" y="757" width="0.3" height="15.0" fill="rgb(234,185,36)" rx="2" ry="2" />
+<text  x="293.66" y="767.5" ></text>
+</g>
+<g >
+<title>_Unwind_Find_FDE (60,507,005 samples, 0.05%)</title><rect x="640.7" y="885" width="0.6" height="15.0" fill="rgb(243,212,32)" rx="2" ry="2" />
+<text  x="643.70" y="895.5" ></text>
+</g>
+<g >
+<title>__schedule (28,952,191 samples, 0.02%)</title><rect x="47.7" y="677" width="0.3" height="15.0" fill="rgb(232,75,3)" rx="2" ry="2" />
+<text  x="50.72" y="687.5" ></text>
+</g>
+<g >
+<title>clockevents_program_event (26,488,475 samples, 0.02%)</title><rect x="658.3" y="741" width="0.2" height="15.0" fill="rgb(241,149,23)" rx="2" ry="2" />
+<text  x="661.25" y="751.5" ></text>
+</g>
+<g >
+<title>__gxx_personality_v0 (211,773,730 samples, 0.18%)</title><rect x="643.2" y="933" width="2.1" height="15.0" fill="rgb(221,209,4)" rx="2" ry="2" />
+<text  x="646.16" y="943.5" ></text>
+</g>
+<g >
+<title>idr_get_next_ul (327,391,349 samples, 0.28%)</title><rect x="649.1" y="757" width="3.3" height="15.0" fill="rgb(248,12,39)" rx="2" ry="2" />
+<text  x="652.10" y="767.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::Divide (22,435,039,064 samples, 19.34%)</title><rect x="87.6" y="901" width="228.3" height="15.0" fill="rgb(233,163,24)" rx="2" ry="2" />
+<text  x="90.61" y="911.5" >libfixeypointy::Decimal::Divide</text>
+</g>
+<g >
+<title>psi_task_change (16,482,582 samples, 0.01%)</title><rect x="47.2" y="629" width="0.2" height="15.0" fill="rgb(209,134,16)" rx="2" ry="2" />
+<text  x="50.22" y="639.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (30,137,775 samples, 0.03%)</title><rect x="213.3" y="837" width="0.3" height="15.0" fill="rgb(230,96,15)" rx="2" ry="2" />
+<text  x="216.31" y="847.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="245" width="2.9" height="15.0" fill="rgb(240,184,25)" rx="2" ry="2" />
+<text  x="42.20" y="255.5" ></text>
+</g>
+<g >
+<title>sched_setaffinity (270,295,683 samples, 0.23%)</title><rect x="45.3" y="853" width="2.7" height="15.0" fill="rgb(224,85,50)" rx="2" ry="2" />
+<text  x="48.27" y="863.5" ></text>
+</g>
+<g >
+<title>malloc (30,236,479 samples, 0.03%)</title><rect x="318.9" y="901" width="0.3" height="15.0" fill="rgb(230,104,22)" rx="2" ry="2" />
+<text  x="321.92" y="911.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (6,470,968,133 samples, 5.58%)</title><rect x="393.4" y="917" width="65.8" height="15.0" fill="rgb(253,178,45)" rx="2" ry="2" />
+<text  x="396.38" y="927.5" >[libgcc..</text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (107,099,604 samples, 0.09%)</title><rect x="44.0" y="917" width="1.1" height="15.0" fill="rgb(252,216,18)" rx="2" ry="2" />
+<text  x="46.97" y="927.5" ></text>
+</g>
+<g >
+<title>std::runtime_error::~runtime_error (8,919,773,788 samples, 7.69%)</title><rect x="552.1" y="917" width="90.8" height="15.0" fill="rgb(243,166,24)" rx="2" ry="2" />
+<text  x="555.11" y="927.5" >std::runti..</text>
+</g>
+<g >
+<title>worker_thread (18,773,846 samples, 0.02%)</title><rect x="28.4" y="901" width="0.2" height="15.0" fill="rgb(211,152,27)" rx="2" ry="2" />
+<text  x="31.43" y="911.5" ></text>
+</g>
+<g >
+<title>__x64_sys_clone (490,858,613 samples, 0.42%)</title><rect x="10.2" y="885" width="5.0" height="15.0" fill="rgb(252,190,22)" rx="2" ry="2" />
+<text  x="13.16" y="895.5" ></text>
+</g>
+<g >
+<title>kworker/0:2-kac (32,911,701 samples, 0.03%)</title><rect x="28.1" y="949" width="0.3" height="15.0" fill="rgb(252,203,41)" rx="2" ry="2" />
+<text  x="31.09" y="959.5" ></text>
+</g>
+<g >
+<title>uv__async_io.part.1 (305,170,391 samples, 0.26%)</title><rect x="39.1" y="837" width="3.1" height="15.0" fill="rgb(222,180,1)" rx="2" ry="2" />
+<text  x="42.14" y="847.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (557,805,664 samples, 0.48%)</title><rect x="33.3" y="821" width="5.6" height="15.0" fill="rgb(230,3,14)" rx="2" ry="2" />
+<text  x="36.27" y="831.5" ></text>
+</g>
+<g >
+<title>node::SpinEventLoop (380,564,981 samples, 0.33%)</title><rect x="38.9" y="885" width="3.9" height="15.0" fill="rgb(253,135,8)" rx="2" ry="2" />
+<text  x="41.94" y="895.5" ></text>
+</g>
+<g >
+<title>_Unwind_Find_FDE (2,510,522,567 samples, 2.16%)</title><rect x="494.0" y="917" width="25.5" height="15.0" fill="rgb(228,36,17)" rx="2" ry="2" />
+<text  x="496.96" y="927.5" >_..</text>
+</g>
+<g >
+<title>do_user_addr_fault (22,507,893 samples, 0.02%)</title><rect x="42.9" y="869" width="0.2" height="15.0" fill="rgb(225,122,42)" rx="2" ry="2" />
+<text  x="45.87" y="879.5" ></text>
+</g>
+<g >
+<title>pud_clear_huge (18,773,846 samples, 0.02%)</title><rect x="28.4" y="821" width="0.2" height="15.0" fill="rgb(209,183,8)" rx="2" ry="2" />
+<text  x="31.43" y="831.5" ></text>
+</g>
+<g >
+<title>v8::Function::Call (26,895,275 samples, 0.02%)</title><rect x="42.5" y="821" width="0.3" height="15.0" fill="rgb(247,109,32)" rx="2" ry="2" />
+<text  x="45.54" y="831.5" ></text>
+</g>
+<g >
+<title>__gxx_personality_v0 (302,031,255 samples, 0.26%)</title><rect x="537.0" y="869" width="3.1" height="15.0" fill="rgb(240,163,28)" rx="2" ry="2" />
+<text  x="540.04" y="879.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (30,077,533 samples, 0.03%)</title><rect x="290.7" y="709" width="0.3" height="15.0" fill="rgb(226,93,29)" rx="2" ry="2" />
+<text  x="293.66" y="719.5" ></text>
+</g>
+<g >
+<title>__tlb_remove_page_size (11,725,674 samples, 0.01%)</title><rect x="44.9" y="629" width="0.2" height="15.0" fill="rgb(238,74,50)" rx="2" ry="2" />
+<text  x="47.94" y="639.5" ></text>
+</g>
+<g >
+<title>[ld-linux-x86-64.so.2] (785,547,793 samples, 0.68%)</title><rect x="377.7" y="901" width="8.0" height="15.0" fill="rgb(219,45,46)" rx="2" ry="2" />
+<text  x="380.69" y="911.5" ></text>
+</g>
+<g >
+<title>mwait_idle_with_hints.constprop.0 (714,913,216 samples, 0.62%)</title><rect x="1182.5" y="757" width="7.3" height="15.0" fill="rgb(246,2,28)" rx="2" ry="2" />
+<text  x="1185.54" y="767.5" ></text>
+</g>
+<g >
+<title>process_one_work (32,118,246 samples, 0.03%)</title><rect x="28.1" y="885" width="0.3" height="15.0" fill="rgb(253,224,6)" rx="2" ry="2" />
+<text  x="31.09" y="895.5" ></text>
+</g>
+<g >
+<title>update_load_avg (30,227,723 samples, 0.03%)</title><rect x="45.9" y="693" width="0.3" height="15.0" fill="rgb(222,214,15)" rx="2" ry="2" />
+<text  x="48.92" y="703.5" ></text>
+</g>
+<g >
+<title>_Fork (490,858,613 samples, 0.42%)</title><rect x="10.2" y="933" width="5.0" height="15.0" fill="rgb(216,77,12)" rx="2" ry="2" />
+<text  x="13.16" y="943.5" ></text>
+</g>
+<g >
+<title>all (115,985,441,944 samples, 100%)</title><rect x="10.0" y="965" width="1180.0" height="15.0" fill="rgb(205,138,1)" rx="2" ry="2" />
+<text  x="13.00" y="975.5" ></text>
+</g>
+<g >
+<title>[libstdc++.so.6.0.30] (332,451,504 samples, 0.29%)</title><rect x="636.1" y="885" width="3.4" height="15.0" fill="rgb(223,102,1)" rx="2" ry="2" />
+<text  x="639.09" y="895.5" ></text>
+</g>
+<g >
+<title>kthread (32,911,701 samples, 0.03%)</title><rect x="28.1" y="917" width="0.3" height="15.0" fill="rgb(218,95,45)" rx="2" ry="2" />
+<text  x="31.09" y="927.5" ></text>
+</g>
+<g >
+<title>uv__io_poll (329,159,386 samples, 0.28%)</title><rect x="39.1" y="853" width="3.3" height="15.0" fill="rgb(221,204,30)" rx="2" ry="2" />
+<text  x="42.09" y="863.5" ></text>
+</g>
+<g >
+<title>v8::internal::MemoryAllocator::Unmapper::PerformFreeMemoryOnQueuedChunks&lt; (557,805,664 samples, 0.48%)</title><rect x="33.3" y="869" width="5.6" height="15.0" fill="rgb(231,138,17)" rx="2" ry="2" />
+<text  x="36.27" y="879.5" ></text>
+</g>
+<g >
+<title>cpuidle_select (86,537,830 samples, 0.07%)</title><rect x="1181.0" y="853" width="0.9" height="15.0" fill="rgb(214,124,48)" rx="2" ry="2" />
+<text  x="1184.05" y="863.5" ></text>
+</g>
+<g >
+<title>stop_one_cpu_nowait (113,924,663 samples, 0.10%)</title><rect x="46.5" y="725" width="1.1" height="15.0" fill="rgb(240,58,19)" rx="2" ry="2" />
+<text  x="49.48" y="735.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_bucket_index (1,026,741,586 samples, 0.89%)</title><rect x="271.0" y="837" width="10.5" height="15.0" fill="rgb(209,119,0)" rx="2" ry="2" />
+<text  x="274.00" y="847.5" ></text>
+</g>
+<g >
+<title>cfree (121,105,271 samples, 0.10%)</title><rect x="645.3" y="933" width="1.3" height="15.0" fill="rgb(208,223,39)" rx="2" ry="2" />
+<text  x="648.32" y="943.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::count (1,802,423,270 samples, 1.55%)</title><rect x="225.0" y="853" width="18.3" height="15.0" fill="rgb(243,127,24)" rx="2" ry="2" />
+<text  x="228.01" y="863.5" ></text>
+</g>
+<g >
+<title>__pud_alloc (19,652,537 samples, 0.02%)</title><rect x="43.6" y="757" width="0.2" height="15.0" fill="rgb(218,62,17)" rx="2" ry="2" />
+<text  x="46.57" y="767.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (40,518,904 samples, 0.03%)</title><rect x="27.6" y="885" width="0.4" height="15.0" fill="rgb(238,200,36)" rx="2" ry="2" />
+<text  x="30.62" y="895.5" ></text>
+</g>
+<g >
+<title>__vunmap (18,773,846 samples, 0.02%)</title><rect x="28.4" y="853" width="0.2" height="15.0" fill="rgb(237,136,38)" rx="2" ry="2" />
+<text  x="31.43" y="863.5" ></text>
+</g>
+<g >
+<title>operator new (60,155,075 samples, 0.05%)</title><rect x="342.3" y="837" width="0.6" height="15.0" fill="rgb(210,83,0)" rx="2" ry="2" />
+<text  x="345.34" y="847.5" ></text>
+</g>
+<g >
+<title>ps (327,391,349 samples, 0.28%)</title><rect x="649.1" y="949" width="3.3" height="15.0" fill="rgb(236,156,3)" rx="2" ry="2" />
+<text  x="652.10" y="959.5" ></text>
+</g>
+<g >
+<title>ixgbe_set_i2c_data (278,001,091 samples, 0.24%)</title><rect x="28.7" y="725" width="2.8" height="15.0" fill="rgb(206,46,47)" rx="2" ry="2" />
+<text  x="31.70" y="735.5" ></text>
+</g>
+<g >
+<title>std::forward&lt;libfixeypointy::Decimal const&amp;&gt; (60,579,448 samples, 0.05%)</title><rect x="349.1" y="837" width="0.6" height="15.0" fill="rgb(234,12,13)" rx="2" ry="2" />
+<text  x="352.09" y="847.5" ></text>
+</g>
+<g >
+<title>node::InternalCallbackScope::Close (286,979,016 samples, 0.25%)</title><rect x="39.2" y="741" width="2.9" height="15.0" fill="rgb(236,145,2)" rx="2" ry="2" />
+<text  x="42.16" y="751.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (68,833,518 samples, 0.06%)</title><rect x="658.2" y="805" width="0.7" height="15.0" fill="rgb(217,162,5)" rx="2" ry="2" />
+<text  x="661.17" y="815.5" ></text>
+</g>
+<g >
+<title>Builtins_CEntry_Return1_DontSaveFPRegs_ArgvOnStack_NoBuiltinExit (283,576,488 samples, 0.24%)</title><rect x="39.2" y="165" width="2.9" height="15.0" fill="rgb(234,123,10)" rx="2" ry="2" />
+<text  x="42.20" y="175.5" ></text>
+</g>
+<g >
+<title>_Fork (42,385,430 samples, 0.04%)</title><rect x="43.4" y="933" width="0.4" height="15.0" fill="rgb(234,177,49)" rx="2" ry="2" />
+<text  x="46.38" y="943.5" ></text>
+</g>
+<g >
+<title>bprm_execve (107,099,604 samples, 0.09%)</title><rect x="44.0" y="853" width="1.1" height="15.0" fill="rgb(240,99,40)" rx="2" ry="2" />
+<text  x="46.97" y="863.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="325" width="2.9" height="15.0" fill="rgb(208,20,49)" rx="2" ry="2" />
+<text  x="42.20" y="335.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::Add (30,226,899 samples, 0.03%)</title><rect x="63.8" y="917" width="0.3" height="15.0" fill="rgb(210,91,41)" rx="2" ry="2" />
+<text  x="66.75" y="927.5" ></text>
+</g>
+<g >
+<title>fstatat64 (1,173,573,389 samples, 1.01%)</title><rect x="15.7" y="917" width="11.9" height="15.0" fill="rgb(228,226,40)" rx="2" ry="2" />
+<text  x="18.68" y="927.5" ></text>
+</g>
+<g >
+<title>v8::internal::MemoryAllocator::Unmapper::UnmapFreeMemoryJob::Run (557,805,664 samples, 0.48%)</title><rect x="33.3" y="885" width="5.6" height="15.0" fill="rgb(222,87,6)" rx="2" ry="2" />
+<text  x="36.27" y="895.5" ></text>
+</g>
+<g >
+<title>do_idle (746,860,113 samples, 0.64%)</title><rect x="1182.4" y="821" width="7.6" height="15.0" fill="rgb(250,81,12)" rx="2" ry="2" />
+<text  x="1185.40" y="831.5" ></text>
+</g>
+<g >
+<title>Builtins_CEntry_Return1_DontSaveFPRegs_ArgvOnStack_BuiltinExit (11,081,904 samples, 0.01%)</title><rect x="42.1" y="549" width="0.1" height="15.0" fill="rgb(234,70,46)" rx="2" ry="2" />
+<text  x="45.11" y="559.5" ></text>
+</g>
+<g >
+<title>v8::internal::(anonymous namespace)::Invoke (11,626,072 samples, 0.01%)</title><rect x="42.1" y="661" width="0.1" height="15.0" fill="rgb(220,205,52)" rx="2" ry="2" />
+<text  x="45.11" y="671.5" ></text>
+</g>
+<g >
+<title>_dl_find_object (60,100,402 samples, 0.05%)</title><rect x="551.5" y="917" width="0.6" height="15.0" fill="rgb(238,33,18)" rx="2" ry="2" />
+<text  x="554.50" y="927.5" ></text>
+</g>
+<g >
+<title>common_interrupt (12,955,328 samples, 0.01%)</title><rect x="658.0" y="805" width="0.2" height="15.0" fill="rgb(207,114,3)" rx="2" ry="2" />
+<text  x="661.03" y="815.5" ></text>
+</g>
+<g >
+<title>cpuidle_enter (51,937,522,361 samples, 44.78%)</title><rect x="652.6" y="853" width="528.4" height="15.0" fill="rgb(212,114,51)" rx="2" ry="2" />
+<text  x="655.65" y="863.5" >cpuidle_enter</text>
+</g>
+<g >
+<title>perf_event_for_each_child (15,643,035 samples, 0.01%)</title><rect x="45.1" y="757" width="0.2" height="15.0" fill="rgb(205,202,1)" rx="2" ry="2" />
+<text  x="48.11" y="767.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator (103,519,655 samples, 0.09%)</title><rect x="233.6" y="757" width="1.1" height="15.0" fill="rgb(232,5,36)" rx="2" ry="2" />
+<text  x="236.62" y="767.5" ></text>
+</g>
+<g >
+<title>_Unwind_SetGR (30,239,807 samples, 0.03%)</title><rect x="642.9" y="933" width="0.3" height="15.0" fill="rgb(220,117,8)" rx="2" ry="2" />
+<text  x="645.86" y="943.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (272,413,847 samples, 0.23%)</title><rect x="552.1" y="885" width="2.8" height="15.0" fill="rgb(231,102,45)" rx="2" ry="2" />
+<text  x="555.11" y="895.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="517" width="2.9" height="15.0" fill="rgb(239,113,30)" rx="2" ry="2" />
+<text  x="42.20" y="527.5" ></text>
+</g>
+<g >
+<title>prepare_task_switch (11,054,737 samples, 0.01%)</title><rect x="47.9" y="661" width="0.1" height="15.0" fill="rgb(235,195,4)" rx="2" ry="2" />
+<text  x="50.90" y="671.5" ></text>
+</g>
+<g >
+<title>copy_page_range (42,385,430 samples, 0.04%)</title><rect x="43.4" y="789" width="0.4" height="15.0" fill="rgb(232,15,28)" rx="2" ry="2" />
+<text  x="46.38" y="799.5" ></text>
+</g>
+<g >
+<title>run_builtin (294,626,664 samples, 0.25%)</title><rect x="45.1" y="901" width="3.0" height="15.0" fill="rgb(209,121,8)" rx="2" ry="2" />
+<text  x="48.07" y="911.5" ></text>
+</g>
+<g >
+<title>__x64_sys_clone (42,385,430 samples, 0.04%)</title><rect x="43.4" y="885" width="0.4" height="15.0" fill="rgb(221,107,12)" rx="2" ry="2" />
+<text  x="46.38" y="895.5" ></text>
+</g>
+<g >
+<title>tick_sched_timer (30,137,775 samples, 0.03%)</title><rect x="213.3" y="789" width="0.3" height="15.0" fill="rgb(248,213,51)" rx="2" ry="2" />
+<text  x="216.31" y="799.5" ></text>
+</g>
+<g >
+<title>dup_mmap (42,385,430 samples, 0.04%)</title><rect x="43.4" y="805" width="0.4" height="15.0" fill="rgb(206,126,51)" rx="2" ry="2" />
+<text  x="46.38" y="815.5" ></text>
+</g>
+<g >
+<title>__handle_mm_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="837" width="0.1" height="15.0" fill="rgb(216,36,16)" rx="2" ry="2" />
+<text  x="18.36" y="847.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (12,814,153 samples, 0.01%)</title><rect x="42.7" y="709" width="0.1" height="15.0" fill="rgb(233,229,17)" rx="2" ry="2" />
+<text  x="45.66" y="719.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,230,318,034 samples, 1.06%)</title><rect x="15.5" y="933" width="12.5" height="15.0" fill="rgb(225,80,35)" rx="2" ry="2" />
+<text  x="18.52" y="943.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Unsigned128BitHash::operator (580,632,742 samples, 0.50%)</title><rect x="236.2" y="805" width="5.9" height="15.0" fill="rgb(243,116,19)" rx="2" ry="2" />
+<text  x="239.21" y="815.5" ></text>
+</g>
+<g >
+<title>std::forward&lt;libfixeypointy::Decimal const&amp;&gt; (30,092,295 samples, 0.03%)</title><rect x="348.8" y="821" width="0.3" height="15.0" fill="rgb(207,229,25)" rx="2" ry="2" />
+<text  x="351.78" y="831.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::_CalculateMultiWordProduct128_2_2 (30,237,368 samples, 0.03%)</title><rect x="318.6" y="901" width="0.3" height="15.0" fill="rgb(233,149,33)" rx="2" ry="2" />
+<text  x="321.61" y="911.5" ></text>
+</g>
+<g >
+<title>schedule_idle (32,189,547 samples, 0.03%)</title><rect x="1182.1" y="869" width="0.3" height="15.0" fill="rgb(247,7,12)" rx="2" ry="2" />
+<text  x="1185.06" y="879.5" ></text>
+</g>
+<g >
+<title>__x64_sys_ioctl (19,242,768 samples, 0.02%)</title><rect x="45.1" y="805" width="0.2" height="15.0" fill="rgb(209,45,29)" rx="2" ry="2" />
+<text  x="48.07" y="815.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator (331,829,906 samples, 0.29%)</title><rect x="228.1" y="789" width="3.4" height="15.0" fill="rgb(243,51,26)" rx="2" ry="2" />
+<text  x="231.09" y="799.5" ></text>
+</g>
+<g >
+<title>zap_pmd_range.isra.0 (107,099,604 samples, 0.09%)</title><rect x="44.0" y="661" width="1.1" height="15.0" fill="rgb(253,228,5)" rx="2" ry="2" />
+<text  x="46.97" y="671.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (1,149,357,880 samples, 0.99%)</title><rect x="520.7" y="869" width="11.7" height="15.0" fill="rgb(245,211,15)" rx="2" ry="2" />
+<text  x="523.73" y="879.5" ></text>
+</g>
+<g >
+<title>do_sys_openat2 (12,220,716 samples, 0.01%)</title><rect x="43.2" y="853" width="0.1" height="15.0" fill="rgb(248,165,47)" rx="2" ry="2" />
+<text  x="46.21" y="863.5" ></text>
+</g>
+<g >
+<title>filename_lookup (467,770,768 samples, 0.40%)</title><rect x="15.7" y="805" width="4.8" height="15.0" fill="rgb(239,150,6)" rx="2" ry="2" />
+<text  x="18.72" y="815.5" ></text>
+</g>
+<g >
+<title>v8::internal::Object::SetProperty (283,576,488 samples, 0.24%)</title><rect x="39.2" y="117" width="2.9" height="15.0" fill="rgb(239,153,39)" rx="2" ry="2" />
+<text  x="42.20" y="127.5" ></text>
+</g>
+<g >
+<title>__cxa_get_globals (30,220,340 samples, 0.03%)</title><rect x="54.2" y="917" width="0.3" height="15.0" fill="rgb(221,89,45)" rx="2" ry="2" />
+<text  x="57.22" y="927.5" ></text>
+</g>
+<g >
+<title>v8::internal::(anonymous namespace)::InvokeWithTryCatch (11,626,072 samples, 0.01%)</title><rect x="42.1" y="677" width="0.1" height="15.0" fill="rgb(228,103,44)" rx="2" ry="2" />
+<text  x="45.11" y="687.5" ></text>
+</g>
+<g >
+<title>Builtins_PromiseFulfillReactionJob (284,237,088 samples, 0.25%)</title><rect x="39.2" y="613" width="2.9" height="15.0" fill="rgb(254,173,20)" rx="2" ry="2" />
+<text  x="42.19" y="623.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_bucket_index (301,624,101 samples, 0.26%)</title><rect x="291.0" y="805" width="3.0" height="15.0" fill="rgb(241,88,17)" rx="2" ry="2" />
+<text  x="293.97" y="815.5" ></text>
+</g>
+<g >
+<title>delay_tsc (278,001,091 samples, 0.24%)</title><rect x="28.7" y="693" width="2.8" height="15.0" fill="rgb(248,96,28)" rx="2" ry="2" />
+<text  x="31.70" y="703.5" ></text>
+</g>
+<g >
+<title>__madvise (557,805,664 samples, 0.48%)</title><rect x="33.3" y="853" width="5.6" height="15.0" fill="rgb(224,208,20)" rx="2" ry="2" />
+<text  x="36.27" y="863.5" ></text>
+</g>
+<g >
+<title>v8::internal::Runtime_SetKeyedProperty (283,576,488 samples, 0.24%)</title><rect x="39.2" y="149" width="2.9" height="15.0" fill="rgb(237,166,4)" rx="2" ry="2" />
+<text  x="42.20" y="159.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (1,173,573,389 samples, 1.01%)</title><rect x="15.7" y="901" width="11.9" height="15.0" fill="rgb(218,70,24)" rx="2" ry="2" />
+<text  x="18.68" y="911.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::count (30,258,392 samples, 0.03%)</title><rect x="262.4" y="885" width="0.3" height="15.0" fill="rgb(215,48,1)" rx="2" ry="2" />
+<text  x="265.40" y="895.5" ></text>
+</g>
+<g >
+<title>_Unwind_GetRegionStart (30,290,210 samples, 0.03%)</title><rect x="641.3" y="885" width="0.3" height="15.0" fill="rgb(249,23,34)" rx="2" ry="2" />
+<text  x="644.32" y="895.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_S_equals (60,228,181 samples, 0.05%)</title><rect x="295.3" y="789" width="0.6" height="15.0" fill="rgb(234,38,52)" rx="2" ry="2" />
+<text  x="298.27" y="799.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator (845,319,368 samples, 0.73%)</title><rect x="272.5" y="805" width="8.6" height="15.0" fill="rgb(242,172,39)" rx="2" ry="2" />
+<text  x="275.54" y="815.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (42,385,430 samples, 0.04%)</title><rect x="43.4" y="917" width="0.4" height="15.0" fill="rgb(212,192,18)" rx="2" ry="2" />
+<text  x="46.38" y="927.5" ></text>
+</g>
+<g >
+<title>menu_select (14,064,173 samples, 0.01%)</title><rect x="1189.8" y="773" width="0.2" height="15.0" fill="rgb(254,96,43)" rx="2" ry="2" />
+<text  x="1192.82" y="783.5" ></text>
+</g>
+<g >
+<title>ixgbe_identify_sfp_module_generic (288,312,845 samples, 0.25%)</title><rect x="28.7" y="821" width="2.9" height="15.0" fill="rgb(230,69,9)" rx="2" ry="2" />
+<text  x="31.66" y="831.5" ></text>
+</g>
+<g >
+<title>exec_binprm (107,099,604 samples, 0.09%)</title><rect x="44.0" y="821" width="1.1" height="15.0" fill="rgb(222,43,41)" rx="2" ry="2" />
+<text  x="46.97" y="831.5" ></text>
+</g>
+<g >
+<title>remove_vm_area (18,773,846 samples, 0.02%)</title><rect x="28.4" y="837" width="0.2" height="15.0" fill="rgb(234,21,51)" rx="2" ry="2" />
+<text  x="31.43" y="847.5" ></text>
+</g>
+<g >
+<title>node::(anonymous namespace)::CompressionStream&lt;node::(anonymous namespace)::ZlibContext&gt;::AfterThreadPoolWork (289,192,928 samples, 0.25%)</title><rect x="39.2" y="789" width="2.9" height="15.0" fill="rgb(248,63,31)" rx="2" ry="2" />
+<text  x="42.16" y="799.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (4,596,404,053 samples, 3.96%)</title><rect x="589.3" y="869" width="46.8" height="15.0" fill="rgb(244,25,23)" rx="2" ry="2" />
+<text  x="592.33" y="879.5" >[lib..</text>
+</g>
+<g >
+<title>load_elf_binary (107,099,604 samples, 0.09%)</title><rect x="44.0" y="789" width="1.1" height="15.0" fill="rgb(227,74,54)" rx="2" ry="2" />
+<text  x="46.97" y="799.5" ></text>
+</g>
+<g >
+<title>v8::internal::(anonymous namespace)::Invoke (284,237,088 samples, 0.25%)</title><rect x="39.2" y="661" width="2.9" height="15.0" fill="rgb(219,107,29)" rx="2" ry="2" />
+<text  x="42.19" y="671.5" ></text>
+</g>
+<g >
+<title>[liblibfixeypointy.so] (60,577,265 samples, 0.05%)</title><rect x="297.4" y="821" width="0.6" height="15.0" fill="rgb(237,146,1)" rx="2" ry="2" />
+<text  x="300.42" y="831.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (528,931,560 samples, 0.46%)</title><rect x="652.6" y="837" width="5.4" height="15.0" fill="rgb(211,19,53)" rx="2" ry="2" />
+<text  x="655.65" y="847.5" ></text>
+</g>
+<g >
+<title>do_execveat_common.isra.0 (107,099,604 samples, 0.09%)</title><rect x="44.0" y="869" width="1.1" height="15.0" fill="rgb(207,53,3)" rx="2" ry="2" />
+<text  x="46.97" y="879.5" ></text>
+</g>
+<g >
+<title>walk_component (138,612,053 samples, 0.12%)</title><rect x="19.1" y="773" width="1.4" height="15.0" fill="rgb(250,41,36)" rx="2" ry="2" />
+<text  x="22.06" y="783.5" ></text>
+</g>
+<g >
+<title>ret_from_fork (18,773,846 samples, 0.02%)</title><rect x="28.4" y="933" width="0.2" height="15.0" fill="rgb(216,6,26)" rx="2" ry="2" />
+<text  x="31.43" y="943.5" ></text>
+</g>
+<g >
+<title>alloc_pages (489,618,624 samples, 0.42%)</title><rect x="10.2" y="757" width="5.0" height="15.0" fill="rgb(235,17,18)" rx="2" ry="2" />
+<text  x="13.18" y="767.5" ></text>
+</g>
+<g >
+<title>ret_from_fork (296,997,145 samples, 0.26%)</title><rect x="28.7" y="933" width="3.0" height="15.0" fill="rgb(253,196,15)" rx="2" ry="2" />
+<text  x="31.66" y="943.5" ></text>
+</g>
+<g >
+<title>tick_sched_timer (30,182,299 samples, 0.03%)</title><rect x="86.4" y="805" width="0.3" height="15.0" fill="rgb(209,111,41)" rx="2" ry="2" />
+<text  x="89.38" y="815.5" ></text>
+</g>
+<g >
+<title>psi_task_switch (29,138,606 samples, 0.03%)</title><rect x="1182.1" y="837" width="0.3" height="15.0" fill="rgb(245,199,27)" rx="2" ry="2" />
+<text  x="1185.08" y="847.5" ></text>
+</g>
+<g >
+<title>__const_udelay (278,001,091 samples, 0.24%)</title><rect x="28.7" y="709" width="2.8" height="15.0" fill="rgb(237,34,1)" rx="2" ry="2" />
+<text  x="31.70" y="719.5" ></text>
+</g>
+<g >
+<title>[libpcre2-8.so.0.10.4] (15,144,566 samples, 0.01%)</title><rect x="15.4" y="917" width="0.1" height="15.0" fill="rgb(234,216,39)" rx="2" ry="2" />
+<text  x="18.36" y="927.5" ></text>
+</g>
+<g >
+<title>kworker/u80:1-e (296,997,145 samples, 0.26%)</title><rect x="28.7" y="949" width="3.0" height="15.0" fill="rgb(220,38,26)" rx="2" ry="2" />
+<text  x="31.66" y="959.5" ></text>
+</g>
+<g >
+<title>getdents64 (327,391,349 samples, 0.28%)</title><rect x="649.1" y="917" width="3.3" height="15.0" fill="rgb(254,56,3)" rx="2" ry="2" />
+<text  x="652.10" y="927.5" ></text>
+</g>
+<g >
+<title>ixgbe_sfp_detection_subtask (288,312,845 samples, 0.25%)</title><rect x="28.7" y="853" width="2.9" height="15.0" fill="rgb(224,117,13)" rx="2" ry="2" />
+<text  x="31.66" y="863.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_S_equals (30,104,984 samples, 0.03%)</title><rect x="235.3" y="773" width="0.3" height="15.0" fill="rgb(242,190,26)" rx="2" ry="2" />
+<text  x="238.28" y="783.5" ></text>
+</g>
+<g >
+<title>ext4_htree_fill_tree (40,518,904 samples, 0.03%)</title><rect x="27.6" y="805" width="0.4" height="15.0" fill="rgb(249,184,38)" rx="2" ry="2" />
+<text  x="30.62" y="815.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (302,333,731 samples, 0.26%)</title><rect x="490.3" y="901" width="3.0" height="15.0" fill="rgb(247,227,19)" rx="2" ry="2" />
+<text  x="493.27" y="911.5" ></text>
+</g>
+<g >
+<title>__cxa_throw (816,057,832 samples, 0.70%)</title><rect x="54.5" y="917" width="8.3" height="15.0" fill="rgb(242,140,3)" rx="2" ry="2" />
+<text  x="57.53" y="927.5" ></text>
+</g>
+<g >
+<title>kthread_is_per_cpu (25,528,553 samples, 0.02%)</title><rect x="46.9" y="645" width="0.2" height="15.0" fill="rgb(223,139,2)" rx="2" ry="2" />
+<text  x="49.88" y="655.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (30,182,299 samples, 0.03%)</title><rect x="86.4" y="885" width="0.3" height="15.0" fill="rgb(230,35,6)" rx="2" ry="2" />
+<text  x="89.38" y="895.5" ></text>
+</g>
+<g >
+<title>get_page_from_freelist (19,652,537 samples, 0.02%)</title><rect x="43.6" y="693" width="0.2" height="15.0" fill="rgb(244,100,5)" rx="2" ry="2" />
+<text  x="46.57" y="703.5" ></text>
+</g>
+<g >
+<title>tlb_finish_mmu (557,606,383 samples, 0.48%)</title><rect x="33.3" y="757" width="5.6" height="15.0" fill="rgb(215,152,11)" rx="2" ry="2" />
+<text  x="36.27" y="767.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="181" width="2.9" height="15.0" fill="rgb(220,123,38)" rx="2" ry="2" />
+<text  x="42.20" y="191.5" ></text>
+</g>
+<g >
+<title>ixgbe_identify_module_generic (288,312,845 samples, 0.25%)</title><rect x="28.7" y="837" width="2.9" height="15.0" fill="rgb(225,63,14)" rx="2" ry="2" />
+<text  x="31.66" y="847.5" ></text>
+</g>
+<g >
+<title>Builtins_JSRunMicrotasksEntry (11,626,072 samples, 0.01%)</title><rect x="42.1" y="645" width="0.1" height="15.0" fill="rgb(235,5,46)" rx="2" ry="2" />
+<text  x="45.11" y="655.5" ></text>
+</g>
+<g >
+<title>dup_mm (489,618,624 samples, 0.42%)</title><rect x="10.2" y="821" width="5.0" height="15.0" fill="rgb(224,186,46)" rx="2" ry="2" />
+<text  x="13.18" y="831.5" ></text>
+</g>
+<g >
+<title>[unknown] (362,826,160 samples, 0.31%)</title><rect x="490.3" y="917" width="3.7" height="15.0" fill="rgb(221,30,25)" rx="2" ry="2" />
+<text  x="493.27" y="927.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_hash_code (1,540,964,942 samples, 1.33%)</title><rect x="297.1" y="837" width="15.7" height="15.0" fill="rgb(240,90,54)" rx="2" ry="2" />
+<text  x="300.11" y="847.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (294,626,664 samples, 0.25%)</title><rect x="45.1" y="933" width="3.0" height="15.0" fill="rgb(252,208,30)" rx="2" ry="2" />
+<text  x="48.07" y="943.5" ></text>
+</g>
+<g >
+<title>acpi_ps_parse_aml (30,495,912 samples, 0.03%)</title><rect x="28.1" y="805" width="0.3" height="15.0" fill="rgb(207,217,0)" rx="2" ry="2" />
+<text  x="31.09" y="815.5" ></text>
+</g>
+<g >
+<title>alloc_pages (19,652,537 samples, 0.02%)</title><rect x="43.6" y="725" width="0.2" height="15.0" fill="rgb(234,228,19)" rx="2" ry="2" />
+<text  x="46.57" y="735.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_bucket_index (271,334,615 samples, 0.23%)</title><rect x="291.3" y="789" width="2.7" height="15.0" fill="rgb(247,116,52)" rx="2" ry="2" />
+<text  x="294.28" y="799.5" ></text>
+</g>
+<g >
+<title>Builtins_AsyncFunctionAwaitResolveClosure (11,626,072 samples, 0.01%)</title><rect x="42.1" y="597" width="0.1" height="15.0" fill="rgb(245,22,1)" rx="2" ry="2" />
+<text  x="45.11" y="607.5" ></text>
+</g>
+<g >
+<title>v8::internal::compiler::PipelineCompilationJob::ExecuteJobImpl (146,463,155 samples, 0.13%)</title><rect x="31.8" y="853" width="1.5" height="15.0" fill="rgb(249,56,19)" rx="2" ry="2" />
+<text  x="34.78" y="863.5" ></text>
+</g>
+<g >
+<title>std::runtime_error::runtime_error (90,795,010 samples, 0.08%)</title><rect x="641.6" y="885" width="0.9" height="15.0" fill="rgb(244,220,2)" rx="2" ry="2" />
+<text  x="644.62" y="895.5" ></text>
+</g>
+<g >
+<title>__x64_sys_execve (107,099,604 samples, 0.09%)</title><rect x="44.0" y="885" width="1.1" height="15.0" fill="rgb(205,11,47)" rx="2" ry="2" />
+<text  x="46.97" y="895.5" ></text>
+</g>
+<g >
+<title>v8::internal::Runtime::SetObjectProperty (283,576,488 samples, 0.24%)</title><rect x="39.2" y="133" width="2.9" height="15.0" fill="rgb(237,181,54)" rx="2" ry="2" />
+<text  x="42.20" y="143.5" ></text>
+</g>
+<g >
+<title>v8::internal::Execution::TryRunMicrotasks (284,237,088 samples, 0.25%)</title><rect x="39.2" y="693" width="2.9" height="15.0" fill="rgb(250,95,21)" rx="2" ry="2" />
+<text  x="42.19" y="703.5" ></text>
+</g>
+<g >
+<title>free_work (18,773,846 samples, 0.02%)</title><rect x="28.4" y="869" width="0.2" height="15.0" fill="rgb(208,187,7)" rx="2" ry="2" />
+<text  x="31.43" y="879.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_const_iterator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, false, true&gt;::_Node_const_iterator (181,408,392 samples, 0.16%)</title><rect x="312.8" y="837" width="1.8" height="15.0" fill="rgb(229,169,12)" rx="2" ry="2" />
+<text  x="315.79" y="847.5" ></text>
+</g>
+<g >
+<title>v8::internal::MicrotaskQueue::RunMicrotasks (11,626,072 samples, 0.01%)</title><rect x="42.1" y="709" width="0.1" height="15.0" fill="rgb(251,121,50)" rx="2" ry="2" />
+<text  x="45.11" y="719.5" ></text>
+</g>
+<g >
+<title>set_next_task_fair (38,337,967 samples, 0.03%)</title><rect x="45.8" y="725" width="0.4" height="15.0" fill="rgb(237,182,12)" rx="2" ry="2" />
+<text  x="48.84" y="735.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_find_node (30,220,931 samples, 0.03%)</title><rect x="225.9" y="837" width="0.3" height="15.0" fill="rgb(242,42,31)" rx="2" ry="2" />
+<text  x="228.93" y="847.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (7,982,409,224 samples, 6.88%)</title><rect x="554.9" y="885" width="81.2" height="15.0" fill="rgb(220,228,0)" rx="2" ry="2" />
+<text  x="557.88" y="895.5" >[libgcc_s..</text>
+</g>
+<g >
+<title>v8::internal::BaseNameDictionary&lt;v8::internal::NameDictionary, v8::internal::NameDictionaryShape&gt;::Add (283,576,488 samples, 0.24%)</title><rect x="39.2" y="53" width="2.9" height="15.0" fill="rgb(248,2,36)" rx="2" ry="2" />
+<text  x="42.20" y="63.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (30,137,775 samples, 0.03%)</title><rect x="213.3" y="741" width="0.3" height="15.0" fill="rgb(215,224,39)" rx="2" ry="2" />
+<text  x="216.31" y="751.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::operator __int128 (89,950,298 samples, 0.08%)</title><rect x="317.7" y="901" width="0.9" height="15.0" fill="rgb(223,188,9)" rx="2" ry="2" />
+<text  x="320.70" y="911.5" ></text>
+</g>
+<g >
+<title>__d_lookup_rcu (138,612,053 samples, 0.12%)</title><rect x="19.1" y="741" width="1.4" height="15.0" fill="rgb(215,37,25)" rx="2" ry="2" />
+<text  x="22.06" y="751.5" ></text>
+</g>
+<g >
+<title>__do_sys_clone (490,858,613 samples, 0.42%)</title><rect x="10.2" y="869" width="5.0" height="15.0" fill="rgb(221,148,12)" rx="2" ry="2" />
+<text  x="13.16" y="879.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, true&gt;::_Node_iterator_base (90,783,681 samples, 0.08%)</title><rect x="313.7" y="821" width="0.9" height="15.0" fill="rgb(244,161,41)" rx="2" ry="2" />
+<text  x="316.71" y="831.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::UnsignedDivideConstant128Bit (2,195,641,820 samples, 1.89%)</title><rect x="221.0" y="885" width="22.3" height="15.0" fill="rgb(206,20,18)" rx="2" ry="2" />
+<text  x="224.01" y="895.5" >l..</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;::operator* (120,692,794 samples, 0.10%)</title><rect x="324.5" y="853" width="1.2" height="15.0" fill="rgb(230,167,54)" rx="2" ry="2" />
+<text  x="327.47" y="863.5" ></text>
+</g>
+<g >
+<title>__alloc_pages (19,652,537 samples, 0.02%)</title><rect x="43.6" y="709" width="0.2" height="15.0" fill="rgb(226,224,32)" rx="2" ry="2" />
+<text  x="46.57" y="719.5" ></text>
+</g>
+<g >
+<title>__do_sys_newfstatat (1,170,231,463 samples, 1.01%)</title><rect x="15.7" y="853" width="11.9" height="15.0" fill="rgb(233,38,50)" rx="2" ry="2" />
+<text  x="18.68" y="863.5" ></text>
+</g>
+<g >
+<title>__cxxabiv1::__si_class_type_info::~__si_class_type_info (2,146,875,448 samples, 1.85%)</title><rect x="519.5" y="917" width="21.8" height="15.0" fill="rgb(211,134,5)" rx="2" ry="2" />
+<text  x="522.50" y="927.5" >_..</text>
+</g>
+<g >
+<title>cfree (30,237,069 samples, 0.03%)</title><rect x="63.4" y="917" width="0.4" height="15.0" fill="rgb(220,112,42)" rx="2" ry="2" />
+<text  x="66.45" y="927.5" ></text>
+</g>
+<g >
+<title>unmap_vmas (107,099,604 samples, 0.09%)</title><rect x="44.0" y="709" width="1.1" height="15.0" fill="rgb(254,4,52)" rx="2" ry="2" />
+<text  x="46.97" y="719.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="197" width="2.9" height="15.0" fill="rgb(220,145,41)" rx="2" ry="2" />
+<text  x="42.20" y="207.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="901" width="0.1" height="15.0" fill="rgb(228,0,17)" rx="2" ry="2" />
+<text  x="18.36" y="911.5" ></text>
+</g>
+<g >
+<title>rest_init (746,860,113 samples, 0.64%)</title><rect x="1182.4" y="853" width="7.6" height="15.0" fill="rgb(215,95,7)" rx="2" ry="2" />
+<text  x="1185.40" y="863.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::operator!=&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt; (60,468,392 samples, 0.05%)</title><rect x="326.3" y="853" width="0.6" height="15.0" fill="rgb(231,222,28)" rx="2" ry="2" />
+<text  x="329.32" y="863.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (30,137,775 samples, 0.03%)</title><rect x="213.3" y="869" width="0.3" height="15.0" fill="rgb(205,192,49)" rx="2" ry="2" />
+<text  x="216.31" y="879.5" ></text>
+</g>
+<g >
+<title>v8::internal::compiler::PipelineImpl::OptimizeGraph (146,463,155 samples, 0.13%)</title><rect x="31.8" y="837" width="1.5" height="15.0" fill="rgb(237,201,2)" rx="2" ry="2" />
+<text  x="34.78" y="847.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (22,507,893 samples, 0.02%)</title><rect x="42.9" y="885" width="0.2" height="15.0" fill="rgb(230,20,52)" rx="2" ry="2" />
+<text  x="45.87" y="895.5" ></text>
+</g>
+<g >
+<title>node::(anonymous namespace)::PlatformWorkerThread (704,268,819 samples, 0.61%)</title><rect x="31.8" y="917" width="7.1" height="15.0" fill="rgb(215,50,44)" rx="2" ry="2" />
+<text  x="34.78" y="927.5" ></text>
+</g>
+<g >
+<title>exec_mmap (107,099,604 samples, 0.09%)</title><rect x="44.0" y="757" width="1.1" height="15.0" fill="rgb(238,97,32)" rx="2" ry="2" />
+<text  x="46.97" y="767.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::Decimal (363,150,614 samples, 0.31%)</title><rect x="344.5" y="821" width="3.7" height="15.0" fill="rgb(228,179,20)" rx="2" ry="2" />
+<text  x="347.47" y="831.5" ></text>
+</g>
+<g >
+<title>Builtins_JSRunMicrotasksEntry (284,237,088 samples, 0.25%)</title><rect x="39.2" y="645" width="2.9" height="15.0" fill="rgb(209,205,34)" rx="2" ry="2" />
+<text  x="42.19" y="655.5" ></text>
+</g>
+<g >
+<title>_Unwind_GetLanguageSpecificData (30,258,868 samples, 0.03%)</title><rect x="533.0" y="869" width="0.3" height="15.0" fill="rgb(220,185,2)" rx="2" ry="2" />
+<text  x="536.04" y="879.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (1,173,573,389 samples, 1.01%)</title><rect x="15.7" y="885" width="11.9" height="15.0" fill="rgb(221,167,49)" rx="2" ry="2" />
+<text  x="18.68" y="895.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_find_before_node (375,535,448 samples, 0.32%)</title><rect x="231.8" y="805" width="3.8" height="15.0" fill="rgb(215,124,51)" rx="2" ry="2" />
+<text  x="234.77" y="815.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_bucket_index (103,519,655 samples, 0.09%)</title><rect x="233.6" y="789" width="1.1" height="15.0" fill="rgb(230,147,24)" rx="2" ry="2" />
+<text  x="236.62" y="799.5" ></text>
+</g>
+<g >
+<title>free_pages_and_swap_cache (557,407,102 samples, 0.48%)</title><rect x="33.3" y="741" width="5.6" height="15.0" fill="rgb(251,3,3)" rx="2" ry="2" />
+<text  x="36.27" y="751.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="357" width="2.9" height="15.0" fill="rgb(240,94,47)" rx="2" ry="2" />
+<text  x="42.20" y="367.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (393,013,000 samples, 0.34%)</title><rect x="69.5" y="901" width="4.0" height="15.0" fill="rgb(212,14,9)" rx="2" ry="2" />
+<text  x="72.47" y="911.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (30,137,775 samples, 0.03%)</title><rect x="213.3" y="821" width="0.3" height="15.0" fill="rgb(224,90,22)" rx="2" ry="2" />
+<text  x="216.31" y="831.5" ></text>
+</g>
+<g >
+<title>handle_pte_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="821" width="0.1" height="15.0" fill="rgb(212,227,37)" rx="2" ry="2" />
+<text  x="18.36" y="831.5" ></text>
+</g>
+<g >
+<title>v8::internal::JSObject::MigrateToMap (283,576,488 samples, 0.24%)</title><rect x="39.2" y="69" width="2.9" height="15.0" fill="rgb(207,185,32)" rx="2" ry="2" />
+<text  x="42.20" y="79.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (816,057,832 samples, 0.70%)</title><rect x="54.5" y="901" width="8.3" height="15.0" fill="rgb(227,101,11)" rx="2" ry="2" />
+<text  x="57.53" y="911.5" ></text>
+</g>
+<g >
+<title>unmap_single_vma (107,099,604 samples, 0.09%)</title><rect x="44.0" y="693" width="1.1" height="15.0" fill="rgb(214,154,5)" rx="2" ry="2" />
+<text  x="46.97" y="703.5" ></text>
+</g>
+<g >
+<title>start_secondary (52,072,787,201 samples, 44.90%)</title><rect x="652.6" y="917" width="529.8" height="15.0" fill="rgb(240,35,22)" rx="2" ry="2" />
+<text  x="655.63" y="927.5" >start_secondary</text>
+</g>
+<g >
+<title>ret_from_fork (32,911,701 samples, 0.03%)</title><rect x="28.1" y="933" width="0.3" height="15.0" fill="rgb(216,13,4)" rx="2" ry="2" />
+<text  x="31.09" y="943.5" ></text>
+</g>
+<g >
+<title>vm_normal_page (14,898,670 samples, 0.01%)</title><rect x="44.0" y="645" width="0.1" height="15.0" fill="rgb(210,224,3)" rx="2" ry="2" />
+<text  x="46.97" y="655.5" ></text>
+</g>
+<g >
+<title>std::uninitialized_copy&lt;__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;, libfixeypointy::Decimal*&gt; (2,480,154,560 samples, 2.14%)</title><rect x="324.5" y="869" width="25.2" height="15.0" fill="rgb(222,151,35)" rx="2" ry="2" />
+<text  x="327.47" y="879.5" >s..</text>
+</g>
+<g >
+<title>acpi_ds_exec_end_op (22,641,618 samples, 0.02%)</title><rect x="28.1" y="773" width="0.2" height="15.0" fill="rgb(241,221,11)" rx="2" ry="2" />
+<text  x="31.10" y="783.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_equals (30,237,244 samples, 0.03%)</title><rect x="296.5" y="821" width="0.3" height="15.0" fill="rgb(248,82,23)" rx="2" ry="2" />
+<text  x="299.50" y="831.5" ></text>
+</g>
+<g >
+<title>__evlist__enable.constprop.0 (289,538,451 samples, 0.25%)</title><rect x="45.1" y="869" width="2.9" height="15.0" fill="rgb(221,164,16)" rx="2" ry="2" />
+<text  x="48.07" y="879.5" ></text>
+</g>
+<g >
+<title>__sched_setaffinity (264,385,976 samples, 0.23%)</title><rect x="45.3" y="773" width="2.7" height="15.0" fill="rgb(205,170,16)" rx="2" ry="2" />
+<text  x="48.33" y="783.5" ></text>
+</g>
+<g >
+<title>dup_mm (42,385,430 samples, 0.04%)</title><rect x="43.4" y="821" width="0.4" height="15.0" fill="rgb(248,44,18)" rx="2" ry="2" />
+<text  x="46.38" y="831.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="261" width="2.9" height="15.0" fill="rgb(210,44,3)" rx="2" ry="2" />
+<text  x="42.20" y="271.5" ></text>
+</g>
+<g >
+<title>epoll_wait (13,640,531 samples, 0.01%)</title><rect x="38.9" y="853" width="0.2" height="15.0" fill="rgb(245,31,40)" rx="2" ry="2" />
+<text  x="41.95" y="863.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;::base (121,115,154 samples, 0.10%)</title><rect x="340.5" y="821" width="1.2" height="15.0" fill="rgb(243,174,48)" rx="2" ry="2" />
+<text  x="343.49" y="831.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::Add (937,330,695 samples, 0.81%)</title><rect x="77.5" y="901" width="9.5" height="15.0" fill="rgb(213,107,6)" rx="2" ry="2" />
+<text  x="80.46" y="911.5" ></text>
+</g>
+<g >
+<title>do_read_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="789" width="0.1" height="15.0" fill="rgb(229,49,31)" rx="2" ry="2" />
+<text  x="18.36" y="799.5" ></text>
+</g>
+<g >
+<title>handle_mm_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="853" width="0.1" height="15.0" fill="rgb(221,214,43)" rx="2" ry="2" />
+<text  x="18.36" y="863.5" ></text>
+</g>
+<g >
+<title>smp_call_function_single (15,643,035 samples, 0.01%)</title><rect x="45.1" y="709" width="0.2" height="15.0" fill="rgb(235,139,39)" rx="2" ry="2" />
+<text  x="48.11" y="719.5" ></text>
+</g>
+<g >
+<title>v8::internal::MicrotaskQueue::RunMicrotasks (284,237,088 samples, 0.25%)</title><rect x="39.2" y="709" width="2.9" height="15.0" fill="rgb(240,191,15)" rx="2" ry="2" />
+<text  x="42.19" y="719.5" ></text>
+</g>
+<g >
+<title>open64 (12,220,716 samples, 0.01%)</title><rect x="43.2" y="917" width="0.1" height="15.0" fill="rgb(241,122,30)" rx="2" ry="2" />
+<text  x="46.21" y="927.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_const_iterator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, false, true&gt;::_Node_const_iterator (60,452,267 samples, 0.05%)</title><rect x="242.4" y="821" width="0.6" height="15.0" fill="rgb(236,71,52)" rx="2" ry="2" />
+<text  x="245.42" y="831.5" ></text>
+</g>
+<g >
+<title>menu_select (84,726,219 samples, 0.07%)</title><rect x="1181.1" y="837" width="0.8" height="15.0" fill="rgb(245,198,33)" rx="2" ry="2" />
+<text  x="1184.06" y="847.5" ></text>
+</g>
+<g >
+<title>copy_process (490,858,613 samples, 0.42%)</title><rect x="10.2" y="837" width="5.0" height="15.0" fill="rgb(214,220,45)" rx="2" ry="2" />
+<text  x="13.16" y="847.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::find (1,681,380,553 samples, 1.45%)</title><rect x="226.2" y="837" width="17.1" height="15.0" fill="rgb(210,212,33)" rx="2" ry="2" />
+<text  x="229.24" y="847.5" ></text>
+</g>
+<g >
+<title>cpuidle_select (14,064,173 samples, 0.01%)</title><rect x="1189.8" y="789" width="0.2" height="15.0" fill="rgb(223,133,21)" rx="2" ry="2" />
+<text  x="1192.82" y="799.5" ></text>
+</g>
+<g >
+<title>enqueue_task_fair (37,460,399 samples, 0.03%)</title><rect x="45.4" y="725" width="0.4" height="15.0" fill="rgb(253,198,32)" rx="2" ry="2" />
+<text  x="48.40" y="735.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (34,827,679 samples, 0.03%)</title><rect x="658.2" y="789" width="0.3" height="15.0" fill="rgb(250,61,13)" rx="2" ry="2" />
+<text  x="661.17" y="799.5" ></text>
+</g>
+<g >
+<title>unlock_page (22,507,893 samples, 0.02%)</title><rect x="42.9" y="805" width="0.2" height="15.0" fill="rgb(234,26,45)" rx="2" ry="2" />
+<text  x="45.87" y="815.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (12,814,153 samples, 0.01%)</title><rect x="42.7" y="693" width="0.1" height="15.0" fill="rgb(219,158,17)" rx="2" ry="2" />
+<text  x="45.66" y="703.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="341" width="2.9" height="15.0" fill="rgb(234,198,45)" rx="2" ry="2" />
+<text  x="42.20" y="351.5" ></text>
+</g>
+<g >
+<title>irq_exit_rcu (32,349,417 samples, 0.03%)</title><rect x="658.5" y="789" width="0.4" height="15.0" fill="rgb(239,49,52)" rx="2" ry="2" />
+<text  x="661.53" y="799.5" ></text>
+</g>
+<g >
+<title>update_process_times (30,137,775 samples, 0.03%)</title><rect x="213.3" y="757" width="0.3" height="15.0" fill="rgb(215,133,14)" rx="2" ry="2" />
+<text  x="216.31" y="767.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="885" width="0.1" height="15.0" fill="rgb(250,172,18)" rx="2" ry="2" />
+<text  x="18.36" y="895.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator (210,854,268 samples, 0.18%)</title><rect x="291.9" y="773" width="2.1" height="15.0" fill="rgb(227,44,23)" rx="2" ry="2" />
+<text  x="294.89" y="783.5" ></text>
+</g>
+<g >
+<title>copy_process (42,385,430 samples, 0.04%)</title><rect x="43.4" y="837" width="0.4" height="15.0" fill="rgb(249,158,52)" rx="2" ry="2" />
+<text  x="46.38" y="847.5" ></text>
+</g>
+<g >
+<title>operator new (60,434,764 samples, 0.05%)</title><rect x="348.2" y="821" width="0.6" height="15.0" fill="rgb(208,33,26)" rx="2" ry="2" />
+<text  x="351.17" y="831.5" ></text>
+</g>
+<g >
+<title>git (1,250,920,613 samples, 1.08%)</title><rect x="15.4" y="949" width="12.7" height="15.0" fill="rgb(246,46,37)" rx="2" ry="2" />
+<text  x="18.36" y="959.5" ></text>
+</g>
+<g >
+<title>malloc (241,837,865 samples, 0.21%)</title><rect x="646.6" y="933" width="2.4" height="15.0" fill="rgb(227,125,32)" rx="2" ry="2" />
+<text  x="649.55" y="943.5" ></text>
+</g>
+<g >
+<title>unmap_page_range (107,099,604 samples, 0.09%)</title><rect x="44.0" y="677" width="1.1" height="15.0" fill="rgb(241,204,30)" rx="2" ry="2" />
+<text  x="46.97" y="687.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::UnsignedDivideConstant128Bit (30,299,070 samples, 0.03%)</title><rect x="317.4" y="901" width="0.3" height="15.0" fill="rgb(227,219,23)" rx="2" ry="2" />
+<text  x="320.39" y="911.5" ></text>
+</g>
+<g >
+<title>htree_dirblock_to_tree (40,518,904 samples, 0.03%)</title><rect x="27.6" y="789" width="0.4" height="15.0" fill="rgb(244,227,8)" rx="2" ry="2" />
+<text  x="30.62" y="799.5" ></text>
+</g>
+<g >
+<title>lookup_fast (138,612,053 samples, 0.12%)</title><rect x="19.1" y="757" width="1.4" height="15.0" fill="rgb(218,93,27)" rx="2" ry="2" />
+<text  x="22.06" y="767.5" ></text>
+</g>
+<g >
+<title>cpuidle_enter_state (729,043,470 samples, 0.63%)</title><rect x="1182.4" y="773" width="7.4" height="15.0" fill="rgb(209,181,37)" rx="2" ry="2" />
+<text  x="1185.40" y="783.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::CalculateUnsignedLongDivision128 (3,954,476,364 samples, 3.41%)</title><rect x="176.5" y="885" width="40.2" height="15.0" fill="rgb(250,25,42)" rx="2" ry="2" />
+<text  x="179.46" y="895.5" >lib..</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_find_node (405,781,048 samples, 0.35%)</title><rect x="231.5" y="821" width="4.1" height="15.0" fill="rgb(247,58,24)" rx="2" ry="2" />
+<text  x="234.46" y="831.5" ></text>
+</g>
+<g >
+<title>acpi_os_execute_deferred (31,535,896 samples, 0.03%)</title><rect x="28.1" y="869" width="0.3" height="15.0" fill="rgb(253,130,42)" rx="2" ry="2" />
+<text  x="31.09" y="879.5" ></text>
+</g>
+<g >
+<title>generic_exec_single (15,643,035 samples, 0.01%)</title><rect x="45.1" y="693" width="0.2" height="15.0" fill="rgb(208,126,0)" rx="2" ry="2" />
+<text  x="48.11" y="703.5" ></text>
+</g>
+<g >
+<title>__do_sys_clone (42,385,430 samples, 0.04%)</title><rect x="43.4" y="869" width="0.4" height="15.0" fill="rgb(215,163,0)" rx="2" ry="2" />
+<text  x="46.38" y="879.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::operator!=&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt; (302,154,722 samples, 0.26%)</title><rect x="338.6" y="837" width="3.1" height="15.0" fill="rgb(230,209,46)" rx="2" ry="2" />
+<text  x="341.65" y="847.5" ></text>
+</g>
+<g >
+<title>pick_next_task (17,897,454 samples, 0.02%)</title><rect x="47.7" y="661" width="0.2" height="15.0" fill="rgb(211,217,50)" rx="2" ry="2" />
+<text  x="50.72" y="671.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::CalculateUnsignedLongDivision128 (60,344,177 samples, 0.05%)</title><rect x="87.0" y="901" width="0.6" height="15.0" fill="rgb(250,112,39)" rx="2" ry="2" />
+<text  x="90.00" y="911.5" ></text>
+</g>
+<g >
+<title>mmput (107,099,604 samples, 0.09%)</title><rect x="44.0" y="741" width="1.1" height="15.0" fill="rgb(238,62,15)" rx="2" ry="2" />
+<text  x="46.97" y="751.5" ></text>
+</g>
+<g >
+<title>kernel_clone (42,385,430 samples, 0.04%)</title><rect x="43.4" y="853" width="0.4" height="15.0" fill="rgb(238,203,2)" rx="2" ry="2" />
+<text  x="46.38" y="863.5" ></text>
+</g>
+<g >
+<title>v8::internal::OptimizingCompileDispatcher::CompileNext (146,463,155 samples, 0.13%)</title><rect x="31.8" y="885" width="1.5" height="15.0" fill="rgb(242,67,5)" rx="2" ry="2" />
+<text  x="34.78" y="895.5" ></text>
+</g>
+<g >
+<title>get_zeroed_page (19,652,537 samples, 0.02%)</title><rect x="43.6" y="741" width="0.2" height="15.0" fill="rgb(238,36,50)" rx="2" ry="2" />
+<text  x="46.57" y="751.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (22,507,893 samples, 0.02%)</title><rect x="42.9" y="901" width="0.2" height="15.0" fill="rgb(222,20,54)" rx="2" ry="2" />
+<text  x="45.87" y="911.5" ></text>
+</g>
+<g >
+<title>acpi_ps_parse_loop (30,495,912 samples, 0.03%)</title><rect x="28.1" y="789" width="0.3" height="15.0" fill="rgb(213,88,49)" rx="2" ry="2" />
+<text  x="31.09" y="799.5" ></text>
+</g>
+<g >
+<title>std::type_info::__is_function_p (30,191,377 samples, 0.03%)</title><rect x="541.0" y="885" width="0.3" height="15.0" fill="rgb(241,157,29)" rx="2" ry="2" />
+<text  x="544.03" y="895.5" ></text>
+</g>
+<g >
+<title>ioctl (19,242,768 samples, 0.02%)</title><rect x="45.1" y="853" width="0.2" height="15.0" fill="rgb(242,123,32)" rx="2" ry="2" />
+<text  x="48.07" y="863.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (30,077,533 samples, 0.03%)</title><rect x="290.7" y="677" width="0.3" height="15.0" fill="rgb(221,128,51)" rx="2" ry="2" />
+<text  x="293.66" y="687.5" ></text>
+</g>
+<g >
+<title>uv_run (380,564,981 samples, 0.33%)</title><rect x="38.9" y="869" width="3.9" height="15.0" fill="rgb(234,76,17)" rx="2" ry="2" />
+<text  x="41.94" y="879.5" ></text>
+</g>
+<g >
+<title>__do_set_cpus_allowed (88,905,851 samples, 0.08%)</title><rect x="45.3" y="741" width="0.9" height="15.0" fill="rgb(233,22,19)" rx="2" ry="2" />
+<text  x="48.33" y="751.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (12,553,929 samples, 0.01%)</title><rect x="39.0" y="837" width="0.1" height="15.0" fill="rgb(247,95,21)" rx="2" ry="2" />
+<text  x="41.96" y="847.5" ></text>
+</g>
+<g >
+<title>__wait_for_common (37,473,026 samples, 0.03%)</title><rect x="47.6" y="709" width="0.4" height="15.0" fill="rgb(254,198,27)" rx="2" ry="2" />
+<text  x="50.64" y="719.5" ></text>
+</g>
+<g >
+<title>ext4_dx_readdir (40,518,904 samples, 0.03%)</title><rect x="27.6" y="821" width="0.4" height="15.0" fill="rgb(214,5,9)" rx="2" ry="2" />
+<text  x="30.62" y="831.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (270,295,683 samples, 0.23%)</title><rect x="45.3" y="837" width="2.7" height="15.0" fill="rgb(252,39,4)" rx="2" ry="2" />
+<text  x="48.27" y="847.5" ></text>
+</g>
+<g >
+<title>cpuUsage.sh (515,396,576 samples, 0.44%)</title><rect x="10.1" y="949" width="5.3" height="15.0" fill="rgb(228,130,47)" rx="2" ry="2" />
+<text  x="13.12" y="959.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_find_before_node (90,697,433 samples, 0.08%)</title><rect x="281.5" y="837" width="0.9" height="15.0" fill="rgb(213,119,33)" rx="2" ry="2" />
+<text  x="284.45" y="847.5" ></text>
+</g>
+<g >
+<title>swapper (52,824,182,429 samples, 45.54%)</title><rect x="652.6" y="949" width="537.4" height="15.0" fill="rgb(249,24,34)" rx="2" ry="2" />
+<text  x="655.58" y="959.5" >swapper</text>
+</g>
+<g >
+<title>acpi_ns_evaluate (31,535,896 samples, 0.03%)</title><rect x="28.1" y="837" width="0.3" height="15.0" fill="rgb(208,60,18)" rx="2" ry="2" />
+<text  x="31.09" y="847.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="453" width="2.9" height="15.0" fill="rgb(207,83,36)" rx="2" ry="2" />
+<text  x="42.20" y="463.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::count (5,013,252,181 samples, 4.32%)</title><rect x="264.2" y="869" width="51.0" height="15.0" fill="rgb(243,112,20)" rx="2" ry="2" />
+<text  x="267.24" y="879.5" >std::..</text>
+</g>
+<g >
+<title>clear_page_erms (489,618,624 samples, 0.42%)</title><rect x="10.2" y="709" width="5.0" height="15.0" fill="rgb(209,4,37)" rx="2" ry="2" />
+<text  x="13.18" y="719.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::ToNative (424,357,848 samples, 0.37%)</title><rect x="216.7" y="885" width="4.3" height="15.0" fill="rgb(235,111,23)" rx="2" ry="2" />
+<text  x="219.69" y="895.5" ></text>
+</g>
+<g >
+<title>proc_root_readdir (327,391,349 samples, 0.28%)</title><rect x="649.1" y="837" width="3.3" height="15.0" fill="rgb(241,94,24)" rx="2" ry="2" />
+<text  x="652.10" y="847.5" ></text>
+</g>
+<g >
+<title>__ext4_check_dir_entry (18,417,695 samples, 0.02%)</title><rect x="27.8" y="773" width="0.2" height="15.0" fill="rgb(210,62,15)" rx="2" ry="2" />
+<text  x="30.85" y="783.5" ></text>
+</g>
+<g >
+<title>path_lookupat (467,770,768 samples, 0.40%)</title><rect x="15.7" y="789" width="4.8" height="15.0" fill="rgb(222,127,35)" rx="2" ry="2" />
+<text  x="18.72" y="799.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::operator __int128 (120,653,301 samples, 0.10%)</title><rect x="243.3" y="885" width="1.3" height="15.0" fill="rgb(209,77,37)" rx="2" ry="2" />
+<text  x="246.34" y="895.5" ></text>
+</g>
+<g >
+<title>user_path_at_empty (1,166,675,806 samples, 1.01%)</title><rect x="15.7" y="821" width="11.9" height="15.0" fill="rgb(242,225,17)" rx="2" ry="2" />
+<text  x="18.72" y="831.5" ></text>
+</g>
+<g >
+<title>[libc.so.6] (1,089,725,518 samples, 0.94%)</title><rect x="31.8" y="933" width="11.1" height="15.0" fill="rgb(235,43,35)" rx="2" ry="2" />
+<text  x="34.78" y="943.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::_CalculateMultiWordProduct128_2_2 (1,751,945,176 samples, 1.51%)</title><rect x="244.6" y="885" width="17.8" height="15.0" fill="rgb(217,120,18)" rx="2" ry="2" />
+<text  x="247.57" y="895.5" ></text>
+</g>
+<g >
+<title>__cxa_begin_catch (60,552,668 samples, 0.05%)</title><rect x="53.6" y="917" width="0.6" height="15.0" fill="rgb(224,82,31)" rx="2" ry="2" />
+<text  x="56.60" y="927.5" ></text>
+</g>
+<g >
+<title>v8::internal::HashTable&lt;v8::internal::NameDictionary, v8::internal::NameDictionaryShape&gt;::FindInsertionEntry (283,576,488 samples, 0.24%)</title><rect x="39.2" y="37" width="2.9" height="15.0" fill="rgb(221,26,6)" rx="2" ry="2" />
+<text  x="42.20" y="47.5" ></text>
+</g>
+<g >
+<title>wake_q_add (24,119,567 samples, 0.02%)</title><rect x="47.4" y="709" width="0.2" height="15.0" fill="rgb(243,125,26)" rx="2" ry="2" />
+<text  x="50.39" y="719.5" ></text>
+</g>
+<g >
+<title>enqueue_entity (30,691,997 samples, 0.03%)</title><rect x="45.4" y="709" width="0.3" height="15.0" fill="rgb(228,73,7)" rx="2" ry="2" />
+<text  x="48.40" y="719.5" ></text>
+</g>
+<g >
+<title>tick_sched_timer (30,077,533 samples, 0.03%)</title><rect x="290.7" y="725" width="0.3" height="15.0" fill="rgb(218,29,34)" rx="2" ry="2" />
+<text  x="293.66" y="735.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="389" width="2.9" height="15.0" fill="rgb(236,4,50)" rx="2" ry="2" />
+<text  x="42.20" y="399.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (270,295,683 samples, 0.23%)</title><rect x="45.3" y="821" width="2.7" height="15.0" fill="rgb(243,55,6)" rx="2" ry="2" />
+<text  x="48.27" y="831.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;__int128&gt;::max (92,456,467 samples, 0.08%)</title><rect x="319.2" y="901" width="1.0" height="15.0" fill="rgb(227,52,36)" rx="2" ry="2" />
+<text  x="322.23" y="911.5" ></text>
+</g>
+<g >
+<title>[ld-linux-x86-64.so.2] (120,616,330 samples, 0.10%)</title><rect x="639.5" y="869" width="1.2" height="15.0" fill="rgb(215,229,1)" rx="2" ry="2" />
+<text  x="642.47" y="879.5" ></text>
+</g>
+<g >
+<title>__x64_sys_getdents64 (40,518,904 samples, 0.03%)</title><rect x="27.6" y="869" width="0.4" height="15.0" fill="rgb(230,205,49)" rx="2" ry="2" />
+<text  x="30.62" y="879.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (30,077,533 samples, 0.03%)</title><rect x="290.7" y="741" width="0.3" height="15.0" fill="rgb(233,153,32)" rx="2" ry="2" />
+<text  x="293.66" y="751.5" ></text>
+</g>
+<g >
+<title>v8::internal::MicrotaskQueue::PerformCheckpoint (284,237,088 samples, 0.25%)</title><rect x="39.2" y="725" width="2.9" height="15.0" fill="rgb(206,53,40)" rx="2" ry="2" />
+<text  x="42.19" y="735.5" ></text>
+</g>
+<g >
+<title>getdents64 (40,518,904 samples, 0.03%)</title><rect x="27.6" y="917" width="0.4" height="15.0" fill="rgb(205,54,48)" rx="2" ry="2" />
+<text  x="30.62" y="927.5" ></text>
+</g>
+<g >
+<title>v8::internal::Object::AddDataProperty (283,576,488 samples, 0.24%)</title><rect x="39.2" y="101" width="2.9" height="15.0" fill="rgb(234,98,25)" rx="2" ry="2" />
+<text  x="42.20" y="111.5" ></text>
+</g>
+<g >
+<title>[liblibfixeypointy.so] (30,290,962 samples, 0.03%)</title><rect x="125.4" y="885" width="0.3" height="15.0" fill="rgb(252,26,7)" rx="2" ry="2" />
+<text  x="128.43" y="895.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_bucket_index (103,519,655 samples, 0.09%)</title><rect x="233.6" y="773" width="1.1" height="15.0" fill="rgb(212,54,48)" rx="2" ry="2" />
+<text  x="236.62" y="783.5" ></text>
+</g>
+<g >
+<title>ixgbe_clock_out_i2c_byte (281,446,896 samples, 0.24%)</title><rect x="28.7" y="757" width="2.8" height="15.0" fill="rgb(249,93,23)" rx="2" ry="2" />
+<text  x="31.66" y="767.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (327,391,349 samples, 0.28%)</title><rect x="649.1" y="885" width="3.3" height="15.0" fill="rgb(209,163,27)" rx="2" ry="2" />
+<text  x="652.10" y="895.5" ></text>
+</g>
+<g >
+<title>perf_event_task_tick (30,077,533 samples, 0.03%)</title><rect x="290.7" y="661" width="0.3" height="15.0" fill="rgb(225,184,42)" rx="2" ry="2" />
+<text  x="293.66" y="671.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (107,099,604 samples, 0.09%)</title><rect x="44.0" y="901" width="1.1" height="15.0" fill="rgb(253,144,29)" rx="2" ry="2" />
+<text  x="46.97" y="911.5" ></text>
+</g>
+<g >
+<title>cpuidle_idle_call (52,029,952,775 samples, 44.86%)</title><rect x="652.6" y="869" width="529.4" height="15.0" fill="rgb(249,62,25)" rx="2" ry="2" />
+<text  x="655.65" y="879.5" >cpuidle_idle_call</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;libfixeypointy::Decimal const*, std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt; &gt;::operator* (181,497,663 samples, 0.16%)</title><rect x="330.9" y="837" width="1.9" height="15.0" fill="rgb(213,209,10)" rx="2" ry="2" />
+<text  x="333.93" y="847.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="277" width="2.9" height="15.0" fill="rgb(210,204,11)" rx="2" ry="2" />
+<text  x="42.20" y="287.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;libfixeypointy::Decimal, std::allocator&lt;libfixeypointy::Decimal&gt; &gt;::operator[] (181,254,928 samples, 0.16%)</title><rect x="351.9" y="917" width="1.8" height="15.0" fill="rgb(221,199,18)" rx="2" ry="2" />
+<text  x="354.86" y="927.5" ></text>
+</g>
+<g >
+<title>x86_64_start_kernel (746,860,113 samples, 0.64%)</title><rect x="1182.4" y="917" width="7.6" height="15.0" fill="rgb(244,221,5)" rx="2" ry="2" />
+<text  x="1185.40" y="927.5" ></text>
+</g>
+<g >
+<title>libfixeypointy::Decimal::Divide (60,567,049 samples, 0.05%)</title><rect x="64.1" y="917" width="0.6" height="15.0" fill="rgb(206,125,9)" rx="2" ry="2" />
+<text  x="67.06" y="927.5" ></text>
+</g>
+<g >
+<title>[libstdc++.so.6.0.30] (211,602,392 samples, 0.18%)</title><rect x="49.9" y="917" width="2.2" height="15.0" fill="rgb(245,11,27)" rx="2" ry="2" />
+<text  x="52.91" y="927.5" ></text>
+</g>
+<g >
+<title>cpuidle_enter_state (51,407,215,830 samples, 44.32%)</title><rect x="658.0" y="837" width="523.0" height="15.0" fill="rgb(250,127,17)" rx="2" ry="2" />
+<text  x="661.03" y="847.5" >cpuidle_enter_state</text>
+</g>
+<g >
+<title>[libc.so.6] (30,349,808 samples, 0.03%)</title><rect x="42.9" y="917" width="0.3" height="15.0" fill="rgb(223,113,39)" rx="2" ry="2" />
+<text  x="45.87" y="927.5" ></text>
+</g>
+<g >
+<title>filemap_map_pages (15,144,566 samples, 0.01%)</title><rect x="15.4" y="773" width="0.1" height="15.0" fill="rgb(237,203,4)" rx="2" ry="2" />
+<text  x="18.36" y="783.5" ></text>
+</g>
+<g >
+<title>cmd_record (294,626,664 samples, 0.25%)</title><rect x="45.1" y="885" width="3.0" height="15.0" fill="rgb(210,90,20)" rx="2" ry="2" />
+<text  x="48.07" y="895.5" ></text>
+</g>
+<g >
+<title>v8::internal::compiler::GraphReducer::ReduceNode (146,463,155 samples, 0.13%)</title><rect x="31.8" y="821" width="1.5" height="15.0" fill="rgb(214,144,11)" rx="2" ry="2" />
+<text  x="34.78" y="831.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (68,833,518 samples, 0.06%)</title><rect x="658.2" y="821" width="0.7" height="15.0" fill="rgb(243,22,8)" rx="2" ry="2" />
+<text  x="661.17" y="831.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_bucket_index (392,406,219 samples, 0.34%)</title><rect x="227.5" y="821" width="4.0" height="15.0" fill="rgb(205,150,38)" rx="2" ry="2" />
+<text  x="230.47" y="831.5" ></text>
+</g>
+<g >
+<title>std::_Construct&lt;libfixeypointy::Decimal, libfixeypointy::Decimal const&amp;&gt; (60,464,748 samples, 0.05%)</title><rect x="326.9" y="853" width="0.6" height="15.0" fill="rgb(235,208,23)" rx="2" ry="2" />
+<text  x="329.93" y="863.5" ></text>
+</g>
+<g >
+<title>affine_move_task (175,480,125 samples, 0.15%)</title><rect x="46.2" y="741" width="1.8" height="15.0" fill="rgb(208,197,34)" rx="2" ry="2" />
+<text  x="49.23" y="751.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (19,242,768 samples, 0.02%)</title><rect x="45.1" y="837" width="0.2" height="15.0" fill="rgb(231,221,45)" rx="2" ry="2" />
+<text  x="48.07" y="847.5" ></text>
+</g>
+<g >
+<title>Builtins_JSBuiltinsConstructStub (11,081,904 samples, 0.01%)</title><rect x="42.1" y="565" width="0.1" height="15.0" fill="rgb(205,30,7)" rx="2" ry="2" />
+<text  x="45.11" y="575.5" ></text>
+</g>
+<g >
+<title>std::__addressof&lt;libfixeypointy::Decimal&gt; (30,229,367 samples, 0.03%)</title><rect x="327.5" y="853" width="0.4" height="15.0" fill="rgb(253,125,42)" rx="2" ry="2" />
+<text  x="330.55" y="863.5" ></text>
+</g>
+<g >
+<title>sched_setaffinity (264,385,976 samples, 0.23%)</title><rect x="45.3" y="789" width="2.7" height="15.0" fill="rgb(247,118,0)" rx="2" ry="2" />
+<text  x="48.33" y="799.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="533" width="2.9" height="15.0" fill="rgb(244,200,16)" rx="2" ry="2" />
+<text  x="42.20" y="543.5" ></text>
+</g>
+<g >
+<title>mwait_idle_with_hints.constprop.0 (51,321,116,549 samples, 44.25%)</title><rect x="658.9" y="821" width="522.1" height="15.0" fill="rgb(213,25,19)" rx="2" ry="2" />
+<text  x="661.87" y="831.5" >mwait_idle_with_hints.constprop.0</text>
+</g>
+<g >
+<title>v8::internal::Builtin_DateConstructor (11,081,904 samples, 0.01%)</title><rect x="42.1" y="533" width="0.1" height="15.0" fill="rgb(212,59,21)" rx="2" ry="2" />
+<text  x="45.11" y="543.5" ></text>
+</g>
+<g >
+<title>kthread (296,997,145 samples, 0.26%)</title><rect x="28.7" y="917" width="3.0" height="15.0" fill="rgb(254,212,53)" rx="2" ry="2" />
+<text  x="31.66" y="927.5" ></text>
+</g>
+<g >
+<title>acpi_ev_asynch_execute_gpe_method (31,535,896 samples, 0.03%)</title><rect x="28.1" y="853" width="0.3" height="15.0" fill="rgb(251,149,34)" rx="2" ry="2" />
+<text  x="31.09" y="863.5" ></text>
+</g>
+<g >
+<title>acpi_ps_execute_method (31,053,592 samples, 0.03%)</title><rect x="28.1" y="821" width="0.3" height="15.0" fill="rgb(211,152,38)" rx="2" ry="2" />
+<text  x="31.09" y="831.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="565" width="2.9" height="15.0" fill="rgb(210,218,34)" rx="2" ry="2" />
+<text  x="42.20" y="575.5" ></text>
+</g>
+<g >
+<title>mm_init (489,618,624 samples, 0.42%)</title><rect x="10.2" y="805" width="5.0" height="15.0" fill="rgb(225,79,2)" rx="2" ry="2" />
+<text  x="13.18" y="815.5" ></text>
+</g>
+<g >
+<title>event_function_call (15,643,035 samples, 0.01%)</title><rect x="45.1" y="725" width="0.2" height="15.0" fill="rgb(220,83,5)" rx="2" ry="2" />
+<text  x="48.11" y="735.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (30,182,299 samples, 0.03%)</title><rect x="86.4" y="869" width="0.3" height="15.0" fill="rgb(227,193,45)" rx="2" ry="2" />
+<text  x="89.38" y="879.5" ></text>
+</g>
+<g >
+<title>pgd_alloc (489,618,624 samples, 0.42%)</title><rect x="10.2" y="789" width="5.0" height="15.0" fill="rgb(242,108,44)" rx="2" ry="2" />
+<text  x="13.18" y="799.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::allocator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::find (60,573,293 samples, 0.05%)</title><rect x="315.2" y="869" width="0.7" height="15.0" fill="rgb(207,92,6)" rx="2" ry="2" />
+<text  x="318.24" y="879.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="213" width="2.9" height="15.0" fill="rgb(246,72,31)" rx="2" ry="2" />
+<text  x="42.20" y="223.5" ></text>
+</g>
+<g >
+<title>v8::platform::DefaultJobWorker::Run (557,805,664 samples, 0.48%)</title><rect x="33.3" y="901" width="5.6" height="15.0" fill="rgb(231,38,23)" rx="2" ry="2" />
+<text  x="36.27" y="911.5" ></text>
+</g>
+<g >
+<title>[perf_divide.out] (120,897,628 samples, 0.10%)</title><rect x="52.1" y="917" width="1.2" height="15.0" fill="rgb(208,58,11)" rx="2" ry="2" />
+<text  x="55.07" y="927.5" ></text>
+</g>
+<g >
+<title>node::fs::FSReqCallback::Resolve (13,363,680 samples, 0.01%)</title><rect x="42.1" y="789" width="0.1" height="15.0" fill="rgb(242,23,17)" rx="2" ry="2" />
+<text  x="45.11" y="799.5" ></text>
+</g>
+<g >
+<title>wake_up_q (82,112,394 samples, 0.07%)</title><rect x="46.6" y="693" width="0.8" height="15.0" fill="rgb(218,115,28)" rx="2" ry="2" />
+<text  x="49.56" y="703.5" ></text>
+</g>
+<g >
+<title>__gxx_personality_v0 (362,712,433 samples, 0.31%)</title><rect x="364.2" y="917" width="3.7" height="15.0" fill="rgb(232,35,22)" rx="2" ry="2" />
+<text  x="367.16" y="927.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (30,077,533 samples, 0.03%)</title><rect x="290.7" y="805" width="0.3" height="15.0" fill="rgb(223,50,17)" rx="2" ry="2" />
+<text  x="293.66" y="815.5" ></text>
+</g>
+<g >
+<title>do_fault (15,144,566 samples, 0.01%)</title><rect x="15.4" y="805" width="0.1" height="15.0" fill="rgb(238,74,48)" rx="2" ry="2" />
+<text  x="18.36" y="815.5" ></text>
+</g>
+<g >
+<title>find_ge_pid (327,391,349 samples, 0.28%)</title><rect x="649.1" y="789" width="3.3" height="15.0" fill="rgb(245,56,33)" rx="2" ry="2" />
+<text  x="652.10" y="799.5" ></text>
+</g>
+<g >
+<title>exit_mmap (107,099,604 samples, 0.09%)</title><rect x="44.0" y="725" width="1.1" height="15.0" fill="rgb(221,69,27)" rx="2" ry="2" />
+<text  x="46.97" y="735.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, std::__detail::_Select1st, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true&gt;::_M_bucket_index (935,978,116 samples, 0.81%)</title><rect x="271.6" y="821" width="9.5" height="15.0" fill="rgb(219,170,40)" rx="2" ry="2" />
+<text  x="274.62" y="831.5" ></text>
+</g>
+<g >
+<title>process_one_work (296,997,145 samples, 0.26%)</title><rect x="28.7" y="885" width="3.0" height="15.0" fill="rgb(250,213,46)" rx="2" ry="2" />
+<text  x="31.66" y="895.5" ></text>
+</g>
+<g >
+<title>v8::internal::JSObject::New (11,081,904 samples, 0.01%)</title><rect x="42.1" y="501" width="0.1" height="15.0" fill="rgb(213,48,5)" rx="2" ry="2" />
+<text  x="45.11" y="511.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (13,861,324 samples, 0.01%)</title><rect x="45.1" y="677" width="0.1" height="15.0" fill="rgb(230,44,43)" rx="2" ry="2" />
+<text  x="48.11" y="687.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;1, libfixeypointy::Unsigned128BitHash, true&gt;::_M_cget (30,269,614 samples, 0.03%)</title><rect x="242.1" y="805" width="0.3" height="15.0" fill="rgb(227,123,52)" rx="2" ry="2" />
+<text  x="245.11" y="815.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (327,391,349 samples, 0.28%)</title><rect x="649.1" y="901" width="3.3" height="15.0" fill="rgb(205,187,40)" rx="2" ry="2" />
+<text  x="652.10" y="911.5" ></text>
+</g>
+<g >
+<title>v8::internal::compiler::GraphReducer::Reduce (146,463,155 samples, 0.13%)</title><rect x="31.8" y="805" width="1.5" height="15.0" fill="rgb(216,65,52)" rx="2" ry="2" />
+<text  x="34.78" y="815.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;unsigned __int128, std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber128&gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned __int128&gt;, libfixeypointy::Unsigned128BitHash, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;true, false, true&gt; &gt;::_M_equals (90,355,799 samples, 0.08%)</title><rect x="234.7" y="789" width="0.9" height="15.0" fill="rgb(212,127,32)" rx="2" ry="2" />
+<text  x="237.67" y="799.5" ></text>
+</g>
+<g >
+<title>node::InternalMakeCallback (289,192,928 samples, 0.25%)</title><rect x="39.2" y="757" width="2.9" height="15.0" fill="rgb(223,124,14)" rx="2" ry="2" />
+<text  x="42.16" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (16,225,741 samples, 0.01%)</title><rect x="15.5" y="917" width="0.2" height="15.0" fill="rgb(236,216,25)" rx="2" ry="2" />
+<text  x="18.52" y="927.5" ></text>
+</g>
+<g >
+<title>vfs_statx (1,166,973,279 samples, 1.01%)</title><rect x="15.7" y="837" width="11.9" height="15.0" fill="rgb(207,56,35)" rx="2" ry="2" />
+<text  x="18.72" y="847.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="421" width="2.9" height="15.0" fill="rgb(235,84,36)" rx="2" ry="2" />
+<text  x="42.20" y="431.5" ></text>
+</g>
+<g >
+<title>node::InternalMakeCallback (13,363,680 samples, 0.01%)</title><rect x="42.1" y="757" width="0.1" height="15.0" fill="rgb(212,20,4)" rx="2" ry="2" />
+<text  x="45.11" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,146,875,448 samples, 1.85%)</title><rect x="519.5" y="901" width="21.8" height="15.0" fill="rgb(216,155,4)" rx="2" ry="2" />
+<text  x="522.50" y="911.5" >[..</text>
+</g>
+<g >
+<title>uv__run_timers (28,866,352 samples, 0.02%)</title><rect x="42.5" y="853" width="0.3" height="15.0" fill="rgb(239,167,38)" rx="2" ry="2" />
+<text  x="45.52" y="863.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (12,814,153 samples, 0.01%)</title><rect x="42.7" y="741" width="0.1" height="15.0" fill="rgb(239,18,19)" rx="2" ry="2" />
+<text  x="45.66" y="751.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (30,077,533 samples, 0.03%)</title><rect x="290.7" y="773" width="0.3" height="15.0" fill="rgb(253,67,23)" rx="2" ry="2" />
+<text  x="293.66" y="783.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="501" width="2.9" height="15.0" fill="rgb(209,174,9)" rx="2" ry="2" />
+<text  x="42.20" y="511.5" ></text>
+</g>
+<g >
+<title>zap_page_range (557,606,383 samples, 0.48%)</title><rect x="33.3" y="773" width="5.6" height="15.0" fill="rgb(224,85,49)" rx="2" ry="2" />
+<text  x="36.27" y="783.5" ></text>
+</g>
+<g >
+<title>[unknown] (8,919,773,788 samples, 7.69%)</title><rect x="552.1" y="901" width="90.8" height="15.0" fill="rgb(247,208,54)" rx="2" ry="2" />
+<text  x="555.11" y="911.5" >[unknown]</text>
+</g>
+<g >
+<title>__tls_get_addr (60,528,535 samples, 0.05%)</title><rect x="540.4" y="885" width="0.6" height="15.0" fill="rgb(247,216,29)" rx="2" ry="2" />
+<text  x="543.42" y="895.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="373" width="2.9" height="15.0" fill="rgb(206,66,13)" rx="2" ry="2" />
+<text  x="42.20" y="383.5" ></text>
+</g>
+<g >
+<title>__cxxabiv1::__class_type_info::__do_catch (30,179,104 samples, 0.03%)</title><rect x="540.1" y="885" width="0.3" height="15.0" fill="rgb(205,4,45)" rx="2" ry="2" />
+<text  x="543.11" y="895.5" ></text>
+</g>
+<g >
+<title>getname_flags (698,905,038 samples, 0.60%)</title><rect x="20.5" y="805" width="7.1" height="15.0" fill="rgb(221,227,14)" rx="2" ry="2" />
+<text  x="23.48" y="815.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="549" width="2.9" height="15.0" fill="rgb(244,84,13)" rx="2" ry="2" />
+<text  x="42.20" y="559.5" ></text>
+</g>
+<g >
+<title>kernel_clone (490,858,613 samples, 0.42%)</title><rect x="10.2" y="853" width="5.0" height="15.0" fill="rgb(209,107,23)" rx="2" ry="2" />
+<text  x="13.16" y="863.5" ></text>
+</g>
+<g >
+<title>secondary_startup_64_no_verify (52,819,647,314 samples, 45.54%)</title><rect x="652.6" y="933" width="537.4" height="15.0" fill="rgb(250,215,12)" rx="2" ry="2" />
+<text  x="655.63" y="943.5" >secondary_startup_64_no_verify</text>
+</g>
+<g >
+<title>[ld-linux-x86-64.so.2] (1,753,013,776 samples, 1.51%)</title><rect x="367.9" y="917" width="17.8" height="15.0" fill="rgb(208,204,54)" rx="2" ry="2" />
+<text  x="370.85" y="927.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="469" width="2.9" height="15.0" fill="rgb(211,7,19)" rx="2" ry="2" />
+<text  x="42.20" y="479.5" ></text>
+</g>
+<g >
+<title>copy_p4d_range (42,385,430 samples, 0.04%)</title><rect x="43.4" y="773" width="0.4" height="15.0" fill="rgb(249,114,51)" rx="2" ry="2" />
+<text  x="46.38" y="783.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_const_iterator&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, false, true&gt;::_Node_const_iterator (59,879,564 samples, 0.05%)</title><rect x="314.6" y="853" width="0.6" height="15.0" fill="rgb(238,43,0)" rx="2" ry="2" />
+<text  x="317.63" y="863.5" ></text>
+</g>
+<g >
+<title>process_one_work (18,773,846 samples, 0.02%)</title><rect x="28.4" y="885" width="0.2" height="15.0" fill="rgb(222,224,7)" rx="2" ry="2" />
+<text  x="31.43" y="895.5" ></text>
+</g>
+<g >
+<title>v8::internal::Execution::Call (26,895,275 samples, 0.02%)</title><rect x="42.5" y="805" width="0.3" height="15.0" fill="rgb(228,153,7)" rx="2" ry="2" />
+<text  x="45.54" y="815.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (12,220,716 samples, 0.01%)</title><rect x="43.2" y="901" width="0.1" height="15.0" fill="rgb(239,148,17)" rx="2" ry="2" />
+<text  x="46.21" y="911.5" ></text>
+</g>
+<g >
+<title>begin_new_exec (107,099,604 samples, 0.09%)</title><rect x="44.0" y="773" width="1.1" height="15.0" fill="rgb(253,13,25)" rx="2" ry="2" />
+<text  x="46.97" y="783.5" ></text>
+</g>
+<g >
+<title>perf_divide.out (59,068,279,356 samples, 50.93%)</title><rect x="48.1" y="949" width="600.9" height="15.0" fill="rgb(213,8,46)" rx="2" ry="2" />
+<text  x="51.07" y="959.5" >perf_divide.out</text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (30,137,775 samples, 0.03%)</title><rect x="213.3" y="853" width="0.3" height="15.0" fill="rgb(212,71,52)" rx="2" ry="2" />
+<text  x="216.31" y="863.5" ></text>
+</g>
+<g >
+<title>[libgcc_s.so.1] (60,492,429 samples, 0.05%)</title><rect x="493.3" y="885" width="0.7" height="15.0" fill="rgb(238,92,26)" rx="2" ry="2" />
+<text  x="496.34" y="895.5" ></text>
+</g>
+<g >
+<title>[perf-2825307.map] (283,576,488 samples, 0.24%)</title><rect x="39.2" y="581" width="2.9" height="15.0" fill="rgb(231,68,42)" rx="2" ry="2" />
+<text  x="42.20" y="591.5" ></text>
+</g>
+<g >
+<title>perf (294,626,664 samples, 0.25%)</title><rect x="45.1" y="949" width="3.0" height="15.0" fill="rgb(217,211,8)" rx="2" ry="2" />
+<text  x="48.07" y="959.5" ></text>
+</g>
+<g >
+<title>[unknown] (50,280,961 samples, 0.04%)</title><rect x="42.9" y="933" width="0.5" height="15.0" fill="rgb(220,193,28)" rx="2" ry="2" />
+<text  x="45.87" y="943.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;unsigned __int128 const, libfixeypointy::MagicNumber256&gt;, true&gt;::_M_next (30,157,956 samples, 0.03%)</title><rect x="296.2" y="821" width="0.3" height="15.0" fill="rgb(212,10,19)" rx="2" ry="2" />
+<text  x="299.19" y="831.5" ></text>
+</g>
+<g >
+<title>cpu_startup_entry (52,072,787,201 samples, 44.90%)</title><rect x="652.6" y="901" width="529.8" height="15.0" fill="rgb(252,32,26)" rx="2" ry="2" />
+<text  x="655.63" y="911.5" >cpu_startup_entry</text>
+</g>
+<g >
+<title>__cxa_throw (1,965,479,104 samples, 1.69%)</title><rect x="520.1" y="885" width="20.0" height="15.0" fill="rgb(250,76,6)" rx="2" ry="2" />
+<text  x="523.11" y="895.5" ></text>
+</g>
+<g >
+<title>do_madvise.part.0 (557,606,383 samples, 0.48%)</title><rect x="33.3" y="789" width="5.6" height="15.0" fill="rgb(229,196,20)" rx="2" ry="2" />
+<text  x="36.27" y="799.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (490,858,613 samples, 0.42%)</title><rect x="10.2" y="901" width="5.0" height="15.0" fill="rgb(223,108,7)" rx="2" ry="2" />
+<text  x="13.16" y="911.5" ></text>
+</g>
+<g >
+<title>native_set_pte (15,144,566 samples, 0.01%)</title><rect x="15.4" y="757" width="0.1" height="15.0" fill="rgb(247,42,26)" rx="2" ry="2" />
+<text  x="18.36" y="767.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (30,182,299 samples, 0.03%)</title><rect x="86.4" y="837" width="0.3" height="15.0" fill="rgb(217,51,0)" rx="2" ry="2" />
+<text  x="89.38" y="847.5" ></text>
+</g>
+<g >
+<title>__cxa_allocate_exception (181,336,117 samples, 0.16%)</title><rect x="75.6" y="901" width="1.9" height="15.0" fill="rgb(228,201,8)" rx="2" ry="2" />
+<text  x="78.62" y="911.5" ></text>
+</g>
+<g >
+<title>cpuidle_idle_call (743,107,643 samples, 0.64%)</title><rect x="1182.4" y="805" width="7.6" height="15.0" fill="rgb(246,140,24)" rx="2" ry="2" />
+<text  x="1185.40" y="815.5" ></text>
+</g>
+</g>
+</svg>
