@@ -1,3 +1,5 @@
+#pragma once
+
 #include <algorithm>
 #include <bit>
 #include <concepts>
@@ -25,24 +27,25 @@ void writeDecimalFractional(const T& x, UInt32 scale, WriteBuffer& ostr,
     /// If it's big integer, but the number of digits is small,
     /// use the implementation for smaller integers for more efficient
     /// arithmetic.
-    if constexpr (std::is_same_v<T, Int256>) {
-        if (x <= std::numeric_limits<UInt32>::max()) {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr,
-                                   trailing_zeros, fixed_fractional_length,
-                                   fractional_length);
-            return;
-        } else if (x <= std::numeric_limits<UInt64>::max()) {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr,
-                                   trailing_zeros, fixed_fractional_length,
-                                   fractional_length);
-            return;
-        } else if (x <= std::numeric_limits<UInt128>::max()) {
-            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr,
-                                   trailing_zeros, fixed_fractional_length,
-                                   fractional_length);
-            return;
-        }
-    } else if constexpr (std::is_same_v<T, Int128>) {
+    // if constexpr (std::is_same_v<T, Int256>) {
+    //     if (x <= std::numeric_limits<UInt32>::max()) {
+    //         writeDecimalFractional(static_cast<UInt32>(x), scale, ostr,
+    //                                trailing_zeros, fixed_fractional_length,
+    //                                fractional_length);
+    //         return;
+    //     } else if (x <= std::numeric_limits<UInt64>::max()) {
+    //         writeDecimalFractional(static_cast<UInt64>(x), scale, ostr,
+    //                                trailing_zeros, fixed_fractional_length,
+    //                                fractional_length);
+    //         return;
+    //     } else if (x <= std::numeric_limits<UInt128>::max()) {
+    //         writeDecimalFractional(static_cast<UInt128>(x), scale, ostr,
+    //                                trailing_zeros, fixed_fractional_length,
+    //                                fractional_length);
+    //         return;
+    //     }
+    // } else 
+    if constexpr (std::is_same_v<T, Int128>) {
         if (x <= std::numeric_limits<UInt32>::max()) {
             writeDecimalFractional(static_cast<UInt32>(x), scale, ostr,
                                    trailing_zeros, fixed_fractional_length,
@@ -56,7 +59,8 @@ void writeDecimalFractional(const T& x, UInt32 scale, WriteBuffer& ostr,
         }
     }
 
-    constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
+    constexpr size_t max_digits = std::numeric_limits<UInt128>::digits10;
+    // constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
     assert(scale <= max_digits);
     assert(fractional_length <= max_digits);
 
@@ -67,8 +71,10 @@ void writeDecimalFractional(const T& x, UInt32 scale, WriteBuffer& ostr,
     Int32 last_nonzero_pos = 0;
 
     if (fixed_fractional_length && fractional_length < scale) {
-        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(
+        T new_value = value / DecimalUtils::scaleMultiplier<Int128>(
                                   scale - fractional_length - 1);
+        // T new_value = value / DecimalUtils::scaleMultiplier<Int256>(
+        //                           scale - fractional_length - 1);
         auto round_carry = new_value % 10;
         value = new_value / 10;
         if (round_carry >= 5) value += 1;

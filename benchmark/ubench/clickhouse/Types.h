@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdint>
 #include <string>
 #include <unordered_set>
@@ -33,9 +35,9 @@ struct Null {
 };
 
 using UInt128 = ::UInt128;
-using UInt256 = ::UInt256;
+// using UInt256 = ::UInt256;
 using Int128 = ::Int128;
-using Int256 = ::Int256;
+// using Int256 = ::Int256;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;

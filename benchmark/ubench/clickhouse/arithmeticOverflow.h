@@ -1,3 +1,5 @@
+#pragma once
+
 #include "defines.h"
 #include "extended_types.h"
 
@@ -58,18 +60,18 @@ inline bool addOverflow(UInt128 x, UInt128 y, UInt128& res) {
     return x > std::numeric_limits<UInt128>::max() - y;
 }
 
-template <>
-inline bool addOverflow(Int256 x, Int256 y, Int256& res) {
-    res = addIgnoreOverflow(x, y);
-    return (y > 0 && x > std::numeric_limits<Int256>::max() - y) ||
-           (y < 0 && x < std::numeric_limits<Int256>::min() - y);
-}
+// template <>
+// inline bool addOverflow(Int256 x, Int256 y, Int256& res) {
+//     res = addIgnoreOverflow(x, y);
+//     return (y > 0 && x > std::numeric_limits<Int256>::max() - y) ||
+//            (y < 0 && x < std::numeric_limits<Int256>::min() - y);
+// }
 
-template <>
-inline bool addOverflow(UInt256 x, UInt256 y, UInt256& res) {
-    res = addIgnoreOverflow(x, y);
-    return x > std::numeric_limits<UInt256>::max() - y;
-}
+// template <>
+// inline bool addOverflow(UInt256 x, UInt256 y, UInt256& res) {
+//     res = addIgnoreOverflow(x, y);
+//     return x > std::numeric_limits<UInt256>::max() - y;
+// }
 
 template <typename T>
 inline bool subOverflow(T x, T y, T& res) {
@@ -104,18 +106,18 @@ inline bool subOverflow(UInt128 x, UInt128 y, UInt128& res) {
     return x < y;
 }
 
-template <>
-inline bool subOverflow(Int256 x, Int256 y, Int256& res) {
-    res = subIgnoreOverflow(x, y);
-    return (y < 0 && x > std::numeric_limits<Int256>::max() + y) ||
-           (y > 0 && x < std::numeric_limits<Int256>::min() + y);
-}
+// template <>
+// inline bool subOverflow(Int256 x, Int256 y, Int256& res) {
+//     res = subIgnoreOverflow(x, y);
+//     return (y < 0 && x > std::numeric_limits<Int256>::max() + y) ||
+//            (y > 0 && x < std::numeric_limits<Int256>::min() + y);
+// }
 
-template <>
-inline bool subOverflow(UInt256 x, UInt256 y, UInt256& res) {
-    res = subIgnoreOverflow(x, y);
-    return x < y;
-}
+// template <>
+// inline bool subOverflow(UInt256 x, UInt256 y, UInt256& res) {
+//     res = subIgnoreOverflow(x, y);
+//     return x < y;
+// }
 
 template <typename T>
 inline bool mulOverflow(T x, T y, T& res) {
@@ -155,11 +157,11 @@ inline bool mulOverflow(Int128 x, Int128 y, Int128& res) {
     return false;
 }
 
-template <>
-inline bool mulOverflow(Int256 x, Int256 y, Int256& res) {
-    res = mulIgnoreOverflow(x, y);
-    return false;
-}
+// template <>
+// inline bool mulOverflow(Int256 x, Int256 y, Int256& res) {
+//     res = mulIgnoreOverflow(x, y);
+//     return false;
+// }
 
 template <>
 inline bool mulOverflow(UInt128 x, UInt128 y, UInt128& res) {
@@ -167,11 +169,11 @@ inline bool mulOverflow(UInt128 x, UInt128 y, UInt128& res) {
     return false;
 }
 
-template <>
-inline bool mulOverflow(UInt256 x, UInt256 y, UInt256& res) {
-    res = mulIgnoreOverflow(x, y);
-    return false;
-}
+// template <>
+// inline bool mulOverflow(UInt256 x, UInt256 y, UInt256& res) {
+//     res = mulIgnoreOverflow(x, y);
+//     return false;
+// }
 }  // namespace common
 
 // NOLINTEND(google-runtime-int)

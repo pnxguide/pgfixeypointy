@@ -1,3 +1,5 @@
+#pragma once
+
 // #include <Common/LockMemoryExceptionInThread.h>
 #include <algorithm>
 #include <cassert>

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "Decimal_fwd.h"
 #include "extended_types.h"
 
@@ -17,7 +19,7 @@ class DateTime64;
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
-using Decimal256 = Decimal<Int256>;
+// using Decimal256 = Decimal<Int256>;
 
 template <class T>
 struct NativeTypeT {
@@ -201,14 +203,14 @@ struct hash<DB::DateTime64> {
     }
 };
 
-template <>
-struct hash<DB::Decimal256> {
-    size_t operator()(const DB::Decimal256 &x) const {
-        // FIXME temp solution
-        return std::hash<DB::Int64>()(
-                   static_cast<DB::Int64>(x.value >> 64 & max_uint_mask)) ^
-               std::hash<DB::Int64>()(
-                   static_cast<DB::Int64>(x.value & max_uint_mask));
-    }
-};
+// template <>
+// struct hash<DB::Decimal256> {
+//     size_t operator()(const DB::Decimal256 &x) const {
+//         // FIXME temp solution
+//         return std::hash<DB::Int64>()(
+//                    static_cast<DB::Int64>(x.value >> 64 & max_uint_mask)) ^
+//                std::hash<DB::Int64>()(
+//                    static_cast<DB::Int64>(x.value & max_uint_mask));
+//     }
+// };
 }  // namespace std

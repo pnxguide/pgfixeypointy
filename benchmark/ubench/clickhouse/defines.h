@@ -1,3 +1,5 @@
+#pragma once
+
 /// __has_feature supported only by clang.
 ///
 /// But libcxx/libcxxabi overrides it to 0,

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstddef>
 
 constexpr size_t KiB = 1024;

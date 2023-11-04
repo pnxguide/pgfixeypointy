@@ -1,3 +1,5 @@
+#pragma once
+
 // Based on https://github.com/amdn/itoa and combined with our optimizations
 //
 //=== itoa.h - Fast integer to ascii conversion                   --*- C++ -*-//
@@ -337,7 +339,8 @@ static inline char* writeLeadingMinus(char* pos) {
 
 template <typename T>
 static inline char* writeSIntText(T x, char* pos) {
-    static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
+    static_assert(std::is_same_v<T, Int128>);
+    // static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
 
     using UnsignedT = make_unsigned_t<T>;
     static constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
@@ -347,13 +350,14 @@ static inline char* writeSIntText(T x, char* pos) {
             const char* res = "-170141183460469231731687303715884105728";
             memcpy(pos, res, strlen(res));
             return pos + strlen(res);
-        } else if constexpr (std::is_same_v<T, Int256>) {
-            const char* res =
-                "-5789604461865809771178549250434395392663499233282028201972879"
-                "2003956564819968";
-            memcpy(pos, res, strlen(res));
-            return pos + strlen(res);
-        }
+        } 
+        // else if constexpr (std::is_same_v<T, Int256>) {
+        //     const char* res =
+        //         "-5789604461865809771178549250434395392663499233282028201972879"
+        //         "2003956564819968";
+        //     memcpy(pos, res, strlen(res));
+        //     return pos + strlen(res);
+        // }
     }
 
     if (x < 0) {
@@ -385,12 +389,12 @@ inline char* itoa(Int128 i, char* p) {
     return impl::writeSIntText(i, p);
 }
 
-template <>
-inline char* itoa(UInt256 i, char* p) {
-    return impl::writeUIntText(i, p);
-}
+// template <>
+// inline char* itoa(UInt256 i, char* p) {
+//     return impl::writeUIntText(i, p);
+// }
 
-template <>
-inline char* itoa(Int256 i, char* p) {
-    return impl::writeSIntText(i, p);
-}
+// template <>
+// inline char* itoa(Int256 i, char* p) {
+//     return impl::writeSIntText(i, p);
+// }

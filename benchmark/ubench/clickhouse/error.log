@@ -1,0 +1,66 @@
+arithmeticOverflow.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+BufferBase.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+DecimalFunctions.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+Decimal_fwd.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+Decimal.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+defines.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+Defines.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+extended_types.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+intExp.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+itoa.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+strong_typedef.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+throwError.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+TypeId.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+Types_fwd.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+types.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+Types.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+unit.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+wide_integer.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+wide_integer.h:265:9: warning: #pragma once in main file
+  265 | #pragma once
+      |         ^~~~
+WriteBuffer.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+WriteHelpers.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~
+WriteIntText.h:1:9: warning: #pragma once in main file
+    1 | #pragma once
+      |         ^~~~

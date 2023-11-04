@@ -1,3 +1,5 @@
+#pragma once
+
 /// Throw DB::Exception-like exception before its definition.
 /// DB::Exception derived from Poco::Exception derived from std::exception.
 /// DB::Exception generally caught as Poco::Exception. std::exception generally
